@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta charset=utf-8>
+		<title>My first Three.js app</title>
+		<style>
+			body { margin: 0; }
+			canvas { width: 100%; height: 100% }
+		</style>
+	</head>
+	<body>
+		<script src="js/three.js"></script>
+		<script>
+			// Our Javascript will go here.
+			// here we gooo
+			var scene = new THREE.Scene();
+			var camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+
+			var renderer = new THREE.WebGLRenderer();
+			renderer.setSize(window.innerWidth, window.innerHeight);
+			document.body.appendChild(renderer.domElement);
+
+			var geometry = new THREE.BoxGeometry(2,1,1);
+			var material = new THREE.MeshBasicMaterial({color: 0x00ff00});
+			//var cube = new THREE.Mesh(geometry, sphere_material_new);
+			//scene.add(cube);
+
+			var sphere_geometry = new THREE.SphereGeometry(1, 32, 32);
+			var sphere_material = new THREE.MeshBasicMaterial( {color: 0xffff00} );
+
+
+			var light = new THREE.AmbientLight( 0x404040 ); // soft white light
+			scene.add( light );
+
+			// white spotlight shining from the side, casting shadow
+			var spotLight = new THREE.SpotLight( 0xffffff );
+			spotLight.position.set( 100, 1000, 100 );
+
+			spotLight.castShadow = true;
+
+			spotLight.shadow.mapSize.width = 1024;
+			spotLight.shadow.mapSize.height = 1024;
+
+			spotLight.shadow.camera.near = 500;
+			spotLight.shadow.camera.far = 4000;
+			spotLight.shadow.camera.fov = 30;
+
+			scene.add( spotLight );
+
+			scene.add( new THREE.AmbientLight( 0x111111 ) );
+
+			var sphere_material_new = new THREE.MeshPhongMaterial({color: 0xdddddd, specular: 0x009900, shading: THREE.SmoothShading });
+
+
+			camera.position.z = 15;
+
+
+
+			for ( var i = 0, l = sphere_geometry.faces.length; i < l; i ++ )
+			{
+				var face = sphere_geometry.faces[ i ];
+				face.materialIndex = Math.floor(1 );
+			}
+
+			var sphere = new THREE.Mesh(sphere_geometry, sphere_material_new);
+			scene.add(sphere);
+
+			var cube = new THREE.Mesh(geometry, sphere_material_new);
+			cube.position.x = 6;
+			
+			scene.add(cube);
+
+
+/*
+			function addMesh( geometry, material )
+			{
+				var mesh = new THREE.Mesh( geometry, material );
+				mesh.position.x = 4;
+				mesh.position.z = 1;
+				mesh.rotation.x = Math.random() * 200 - 100;
+				mesh.rotation.y = Math.random() * 200 - 100;
+				mesh.rotation.z = Math.random() * 200 - 100;
+				scene.add( mesh );
+			}
+*/
+			function render()
+			{
+				this.requestAnimationFrame(render);
+
+				cube.rotation.x += 0.02;
+				cube.rotation.y += 0.01;
+
+				sphere.rotation.x += 0.04;
+
+				renderer.render(scene, camera);
+			}
+
+			render();
+
+		</script>
+	</body>
+</html>
