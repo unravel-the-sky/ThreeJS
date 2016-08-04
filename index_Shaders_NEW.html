@@ -8,6 +8,20 @@
       margin: 0;
     }
 
+    .info {
+			position: absolute;
+			background-color: black;
+			opacity: 0.7;
+			color: white;
+			text-align: center;
+			top: 0px;
+			width: 100%;
+		}
+
+    .info a {
+			color: #00ffff;
+		}
+
     canvas {
       width: 100%;
       height: 100%;
@@ -15,10 +29,69 @@
   </style>
 </head>
 <body>
+  <div class="info">
+    <br />
+    <div>WELCOME TO MY BALLS!!</div>
+    <div>
+      <div style="display:inline-block">
+        <span>number of rows:</span>
+        <select id="numRows">
+          <option>10</option>
+          <option>50</option>
+          <option>100</option>
+          <option>500</option>
+          <option>1000</option>
+        </select>
+      </div>
+
+      &nbsp;&nbsp;&nbsp;
+
+      <div style="display:inline-block">
+        <span>select object type:</span>
+        <select id="objectType">
+          <option>Spheres</option>
+          <option>Circles</option>
+          <option>Cones</option>
+        </select>
+      </div>
+
+      &nbsp;&nbsp;&nbsp;
+
+      <div style="display:inline-block">
+        <span>point size:</span>
+        <select id="pointSize">
+          <option>0.5</option>
+          <option>1</option>
+          <option>5</option>
+        </select>
+      </div>
+
+      &nbsp;&nbsp;&nbsp;
+
+      <div style="display:inline-block">
+        <span>display seismic box</span>
+        <select id="displaySeismic">
+          <option>inline</option>
+          <option>xline</option>
+          <option>zline</option>
+          <option>all</option>
+          <option>off</option>
+        </select>
+      </div>
+
+    </div>
+  </div>
+
+  <div id="container"></div>
+
   <script src="js/three.js"></script>
   <script src="js/libs/stats.min.js"></script>
   <script src="js/controls/TrackballControls.js"></script>
+  <script src="js/libs/dat.gui.min.js"></script>
+  <script src="js/renderers/CanvasRenderer.js"></script>
+  <script src="js/math/Lut.js"></script>
 
+  <script src="js/jquery-1.10.2.min.js"></script>
 
   <script type="x-shader/x-vertex" id="vertexShader">
 
@@ -29,7 +102,9 @@
 
     attribute vec3 translate;
     attribute vec3 color;
+
     uniform float time;
+    uniform float point_size;
 
     varying vec2 vUv;
     varying vec3 vertex_normal;
@@ -43,9 +118,10 @@
       vertex_color = color;
 
       // then, vertexShader related stuff
-      vec3 trTime = vec3(translate.x + time,translate.y + time,translate.z + time);
-      float scale =  sin( trTime.x * 2.1 ) + sin( trTime.y * 3.2 ) + sin( trTime.z * 4.3 ) + 4.0; // zhis i found on the 'internet'
-
+      //vec3 trTime = vec3(translate.x + time,translate.y + time,translate.z + time);
+      float scale;
+      //float scale =  sin( trTime.x * 2.1 ) + sin( trTime.y * 3.2 ) + sin( trTime.z * 4.3 ) + 0.0; // zhis i found on the 'internet'
+      scale = point_size;  //just for the sake of simplicity
 
       vec4 mvPosition = modelViewMatrix * vec4(translate, 1.0);
       //vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
@@ -71,11 +147,27 @@
     varying vec3 vertex_color;
 
     uniform float time;
+    uniform sampler2D map;
 
     // random function in case i need it
     float rand(vec2 co)
     {
       return fract(sin(dot(co.xy ,vec2(12.9898,78.233))) * 43758.5453);
+    }
+
+    // HSL to RGB Convertion helpers
+    vec3 HUEtoRGB(float H){
+      H = mod(H,1.0);
+      float R = abs(H * 6.0 - 3.0) - 1.0;
+      float G = 2.0 - abs(H * 6.0 - 2.0);
+      float B = 2.0 - abs(H * 6.0 - 4.0);
+      return clamp(vec3(R,G,B),0.0,1.0);
+    }
+
+    vec3 HSLtoRGB(vec3 HSL){
+      vec3 RGB = HUEtoRGB(HSL.x);
+      float C = (1.0 - abs(2.0 * HSL.z - 1.0)) * HSL.y;
+      return (RGB - 0.5) * C + HSL.z;
     }
 
     void main ()
@@ -90,7 +182,10 @@
 
       float scale =  max((sin(time) + cos (time)), 0.5);  
 
-      gl_FragColor = vec4(vec3(vertex_color * dot_product_light), 1.0);             //  adding color + light + color coming from outside
+      vec4 diffuseColor = texture2D( map, vUv );
+
+      //gl_FragColor = vec4(diffuseColor.xyz * vec3(vertex_color * dot_product_light), diffuseColor.w);             //  adding color + light + texture to fake 3d sphere
+      gl_FragColor = vec4(vec3(vertex_color * dot_product_light), 1.0);                   //  adding color + light + color coming from outside
       //gl_FragColor = vec4(vec3(fixed_color * dot_product_light), 1.0);                    //  adding color + light + fixed color
       //gl_FragColor = vec4(vec3(vUv * rand(vUv) * dot_product_light, 0.0), 1.0);           //  adding color + light + random noise
       //gl_FragColor = vec4(vec3(vUv * dot_product_light, 0.0), 1.0);                       //  adding color + light
@@ -107,44 +202,184 @@
     var scene = new THREE.Scene();
     var camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 10000);
     var mouse = new THREE.Vector2(), INTERSECTED;
-    var controls, stats, renderer, raycaster;
-    var shaderMaterial, instanced_sphere, translate_array_for_instancing;
+    var controls, stats, renderer, raycaster, container;
+    var shaderMaterial, instanced_sphere, numberOfRows, instancedGeometry, pointSize;
+    var objectType;
+    var displaySeismicBool, displaySeismicSlice;
 
-    init();
-    animate();
+    var seismicCubeMesh, inlinePlaneMesh, xLinePlaneMesh, zLinePlaneMesh;
 
-    function init()
+    var colorMap, numberOfColors, legendLayout, lut;
+
+    //init();
+    //guiStuff();
+    //addObjects();
+    //addSeismicBox();
+    //addSeicmicSlices();
+    
+    //animate();
+
+    // LOAD DATA
+    $(document).ready(function () {
+      jQuery.get('OpenInventor/pointsData_reformatted_v2.csv', function (data) {
+
+        init();
+        guiStuff();
+
+        addObjects(CSVToArray(data));
+
+        addSeismicBox();
+        addSeicmicSlices();
+
+        animate();
+      });
+    });
+
+    // from http://stackoverflow.com/questions/1293147/javascript-code-to-parse-csv-data
+    function CSVToArray(strData, strDelimiter) {
+      // Check to see if the delimiter is defined. If not,
+      // then default to comma.
+      strDelimiter = (strDelimiter || ",");
+
+      // Create a regular expression to parse the CSV values.
+      var objPattern = new RegExp(
+              (
+                  // Delimiters.
+                      "(\\" + strDelimiter + "|\\r?\\n|\\r|^)" +
+
+                          // Quoted fields.
+                              "(?:\"([^\"]*(?:\"\"[^\"]*)*)\"|" +
+
+                          // Standard fields.
+                              "([^\"\\" + strDelimiter + "\\r\\n]*))"
+                      ),
+              "gi"
+      );
+
+
+      // Create an array to hold our data. Give the array
+      // a default empty first row.
+      var arrData = [[]];
+
+      // Create an array to hold our individual pattern
+      // matching groups.
+      var arrMatches = null;
+
+
+      // Keep looping over the regular expression matches
+      // until we can no longer find a match.
+      while (arrMatches = objPattern.exec(strData)) {
+
+        // Get the delimiter that was found.
+        var strMatchedDelimiter = arrMatches[1];
+
+        // Check to see if the given delimiter has a length
+        // (is not the start of string) and if it matches
+        // field delimiter. If id does not, then we know
+        // that this delimiter is a row delimiter.
+        if (
+                strMatchedDelimiter.length &&
+                        (strMatchedDelimiter != strDelimiter)
+                ) {
+
+          // Since we have reached a new row of data,
+          // add an empty row to our data array.
+          arrData.push([]);
+
+        }
+
+
+        // Now that we have our delimiter out of the way,
+        // let's check to see which kind of value we
+        // captured (quoted or unquoted).
+        if (arrMatches[2]) {
+
+          // We found a quoted value. When we capture
+          // this value, unescape any double quotes.
+          var strMatchedValue = arrMatches[2].replace(
+                  new RegExp("\"\"", "g"),
+                  "\""
+          );
+
+        } else {
+
+          // We found a non-quoted value.
+          var strMatchedValue = arrMatches[3];
+
+        }
+
+
+        // Now that we have our value string, let's add
+        // it to the data array.
+        arrData[arrData.length - 1].push(strMatchedValue);
+      }
+
+      // Return the parsed data.
+      return (arrData);
+    }
+
+    function guiStuff()
     {
-      // add controls to the screen
-      controls = new THREE.TrackballControls(camera);
-      controls.rotateSpeed = 30.0;
-      controls.zoomSpeed = 1.2;
-      controls.rotateCamera();
+      var numberOfRowsElm = document.getElementById('numRows');
+      numberOfRowsElm.value = "100";
+      numberOfRows = 1000000;
 
-      controls.panSpeed = 0.8;
-      controls.noZoom = false;
-      controls.noPan = false;
-      controls.staticMoving = false;
+      numberOfRowsElm.addEventListener("change", function () {
+        numberOfRows = parseInt(numberOfRowsElm.value);
+        scene.remove(instanced_sphere);
+        addObjects();
+      });
 
-      controls.dynamicDampingFactor = 0.5;
-      controls.keys = [65, 83, 68];
-      controls.addEventListener('change', render);
-      // end of controls
+      var objectTypeElm = document.getElementById('objectType');
+      objectType = objectTypeElm.value;
 
-      raycaster = new THREE.Raycaster();
-      renderer = new THREE.WebGLRenderer();
-      renderer.setSize(window.innerWidth, window.innerHeight);
-      document.body.appendChild(renderer.domElement);
-      stats = new Stats();
-      document.body.appendChild(stats.dom);
-      document.addEventListener('mousemove', onDocumentMouseMove, false);
-      window.addEventListener('resize', onWindowResize, false);
+      objectTypeElm.addEventListener("change", function () {
+        objectType = objectTypeElm.value;
+        scene.remove(instanced_sphere);
+        //addObjects();
+        $(document).ready(function () {
+          jQuery.get('OpenInventor/pointsData_reformatted_v2.csv', function (data) {
 
+            addObjects(CSVToArray(data));
+          });
+        });
+      });
+
+      var pointSizeElm = document.getElementById('pointSize');
+      pointSizeElm.value = "0.5";
+      pointSize = pointSizeElm.value;
+
+      pointSizeElm.addEventListener("change", function () {
+        pointSize = parseFloat(pointSizeElm.value);
+      });
+
+      var seismicBoxElm = document.getElementById('displaySeismic');
+      seismicBoxElm.value = "inline";
+      displaySeismicSlice = seismicBoxElm.value;
+
+      seismicBoxElm.addEventListener("change", function () {
+        displaySeismicSlice = seismicBoxElm.value;
+        scene.remove(inlinePlaneMesh);
+        scene.remove(xLinePlaneMesh);
+        scene.remove(zLinePlaneMesh);
+        addSeismicBox();
+        addSeicmicSlices();
+      })
+
+
+    }
+
+
+    function addObjects(data)
+    {
       // set up the sphere vars
       var radius = 5, segments = 16, rings = 16;
+
       shaderMaterial = new THREE.ShaderMaterial({
         uniforms: {
-          time: {value: 0.0}
+          //map: { value: new THREE.TextureLoader().load("textures/circle.png") },
+          time: { value: 0.0 },
+          point_size: {value: 1.0}
         },
         vertexShader: document.getElementById('vertexShader').textContent,
         fragmentShader: document.getElementById('fragmentShader').textContent,
@@ -153,100 +388,383 @@
       });
 
       // multi-instanced geometry logic begins here
-      var instancedGeometry = new THREE.InstancedBufferGeometry();
-      instancedGeometry.copy(new THREE.SphereBufferGeometry(radius, segments, rings));
-      //instancedGeometry.copy(new THREE.CircleBufferGeometry(1, 15));
-      //instancedGeometry.copy(new THREE.ConeBufferGeometry(radius, 10, segments, rings));
+      //instancedGeometry = new THREE.BufferGeometry();
+      instancedGeometry = new THREE.InstancedBufferGeometry();
 
-      var num_rows = 100;
+      if (objectType == "Spheres")
+        instancedGeometry.copy(new THREE.SphereBufferGeometry(radius, segments, rings));
+      else if (objectType == "Circles")
+        instancedGeometry.copy(new THREE.CircleBufferGeometry(1, 15));
+      else
+        instancedGeometry.copy(new THREE.ConeBufferGeometry(radius, 10, segments, rings));
+
+
+
+      var num_rows = numberOfRows;
       var num_points = num_rows * num_rows;
       var x = 0;
       var y = 0;
 
+      if (numberOfRows == 1000000)
+        num_points = data.length - 1;
+
+      //instancedGeometry.attributes = {
+      //    position: {
+      //        itemSize: 3,
+      //        array: new Float32Array(num_points * 3),
+      //        numItems: num_points * 3
+      //    }
+      //}
+
+      //var positions_temp = instancedGeometry.attributes.position.array;
+
+
       // set positions
-      translate_array_for_instancing = new Float32Array(num_points * 3); //for x,y,z
+      var translate_array_for_instancing = new Float32Array(num_points * 3); //for x,y,z
 
-      var translate_array_for_instancing_temp = new Float32Array(num_points * 3); //for x,y,z
+      if (numberOfRows == 1000000) {
+        for (var i = 0, i3 = 0, l = num_points; i < l; i++, i3 += 3) {
 
-      for (var i = 0, i3 = 0, l = num_points; i < l; i++, i3 += 3) {
+          if (i % num_rows == 0 && x != 0)
+            y++;
 
-        if (i % num_rows == 0 && x != 0)
-          y++;
+          translate_array_for_instancing[i3 + 0] = parseFloat(data[i][0]);
+          translate_array_for_instancing[i3 + 1] = parseFloat(data[i][1]);
+          translate_array_for_instancing[i3 + 2] = parseFloat(data[i][2]) * 2;
 
-        translate_array_for_instancing[i3 + 0] = ((x * 100) % (num_rows * 10));
-        translate_array_for_instancing[i3 + 1] = y * 10;
-        translate_array_for_instancing[i3 + 2] = Math.random() * 1000;
+          //translate_array_for_instancing[i3 + 0] = ((x * 10) % (num_rows * 10));
+          //translate_array_for_instancing[i3 + 1] = y * 10;
+          //translate_array_for_instancing[i3 + 2] = Math.random() * num_rows * 10;
 
-        translate_array_for_instancing_temp[i3 + 0] = 0.0;
-        translate_array_for_instancing_temp[i3 + 1] = 0.0;
-        translate_array_for_instancing_temp[i3 + 2] = 0.0;
-
-        x++;
+          x++;
+        }
       }
 
+      else {
+        for (var i = 0, i3 = 0, l = num_points; i < l; i++, i3 += 3) {
+
+          if (i % num_rows == 0 && x != 0)
+            y++;
+
+          //translate_array_for_instancing[i3 + 0] = parseFloat(data[i][0]);
+          //translate_array_for_instancing[i3 + 1] = parseFloat(data[i][1]);
+          //translate_array_for_instancing[i3 + 2] = parseFloat(data[i][2]) * 2;
+
+          translate_array_for_instancing[i3 + 0] = ((x * 10) % (num_rows * 10));
+          translate_array_for_instancing[i3 + 1] = y * 10;
+          translate_array_for_instancing[i3 + 2] = Math.random() * num_rows * 10;
+
+          x++;
+        }
+      }
+
+
+      //instancedGeometry.addAttribute('position', new THREE.InstancedBufferAttribute(translate_array_for_instancing, 3, 1));
       instancedGeometry.addAttribute("translate", new THREE.InstancedBufferAttribute(translate_array_for_instancing, 3, 1));
       //instancedGeometry.addAttribute("position", new THREE.InstancedBufferAttribute(translate_array_for_instancing_temp, 3, 1));
 
       var temp_positions = instancedGeometry.attributes.position;
 
-      // set colors
+
+
+      //color map ziki
+      colorMap = 'rainbow';
+      numberOfColors = 1024;
+      legendLayout = 'vertical';
+
+      var lutColors = [];
+
       var color_array_for_instancing = new Float32Array(num_points * 3); //for r,g,b
-      for (var i = 0, i3 = 0, l = num_points; i < l; i++, i3 += 3) {
 
-        color_array_for_instancing[i3 + 0] = Math.random();
-        color_array_for_instancing[i3 + 1] = Math.random();
-        color_array_for_instancing[i3 + 2] = Math.random();
+      //loadModel(colorMap, numberOfColors, legendLayout);   // simdilik bunu ayri function yapma, burada zorla bakalim olcak mi
+      var loader = new THREE.BufferGeometryLoader();
 
-      }
+      loader.load("models/json/pressure.json", function (geometry) {
 
-      instancedGeometry.addAttribute("color", new THREE.InstancedBufferAttribute(color_array_for_instancing, 3, 2));
+        lut = new THREE.Lut(colorMap, numberOfColors);
+        lut.setMax(2000);
+        lut.setMin(0);
+
+        for (var i = 0; i < num_points; i++) {
+          var colorValue = geometry.attributes.pressure.array[i];
+
+          color = lut.getColor(colorValue);
+
+          if (color == undefined)
+            console.log("poop");
+          else {
+            color_array_for_instancing[i * 3] = color.r;
+            color_array_for_instancing[i * 3 + 1] = color.g;
+            color_array_for_instancing[i * 3 + 2] = color.b;
+          }
+
+        }
+
+        instancedGeometry.addAttribute("color", new THREE.InstancedBufferAttribute(color_array_for_instancing, 3, 1));
+
+        // legend ziki
+        if (legendLayout) {
+          if (legendLayout == 'vertical') {
+            legend = lut.setLegendOn();
+            legend.scale.x = 100;
+            legend.scale.y = 100;
+            legend.scale.z = 100;
 
 
-      //var instanced_sphere = new THREE.Mesh(sphereGeometry, shaderMaterial);
+          }
+        }
+
+        //scene.add(legend);
+
+        var labels = lut.setLegendLabels({ 'title': 'Pressure', 'um': 'Pa', 'ticks': 5 });
+        scene.add(labels['title']);
+
+      });
+
+
+
+      // set colors
+      //var color_array_for_instancing = new Float32Array(num_points * 3); //for r,g,b
+      //for (var i = 0, i3 = 0, l = num_points; i < l; i++, i3 += 3) {
+      //  color_array_for_instancing[i3 + 0] = lutColors[i * 3];
+      //  color_array_for_instancing[i3 + 1] = lutColors[i * 3 + 1];
+      //  color_array_for_instancing[i3 + 2] = lutColors[i * 3 + 2];
+      //}
+
+      //instancedGeometry.addAttribute('color', new THREE.BufferAttribute(translate_array_for_instancing, 3));
+      //instancedGeometry.addAttribute("color", new THREE.InstancedBufferAttribute(color_array_for_instancing, 3, 1));
+
       instanced_sphere = new THREE.Mesh(instancedGeometry, shaderMaterial);
       instanced_sphere.scale.set(1, 1, 1);
       instanced_sphere.frustumCulled = false;
       scene.add(instanced_sphere);
 
-      var bbox = new THREE.Box3().setFromObject(instanced_sphere);
+      var bbox_sphere = new THREE.Box3().setFromObject(instanced_sphere);
 
-      camera.position.z = 3000;
-      camera.lookAt(bbox.center);
+      var height = bbox_sphere.max.y;
+      var width = bbox_sphere.max.x - bbox_sphere.min.x;
+      var max_z = bbox_sphere.max.z;
 
-      var distance = bbox.distanceToPoint(camera.position);
-      //var dist = height / 2 / Math.tan(Math.PI * camera.fov / 360);
+      var vertical_fov = camera.fov * (Math.PI / 180);
+      var horizontal_fov = 2 * Math.atan(Math.tan(vertical_fov / 2));
 
-      var from_cam_to_bbox = camera.position - bbox.center;
+      var distance_vertical = height / (2 * Math.tan(vertical_fov / 2));
+      var distance_horizontal = width / (2 * Math.tan(horizontal_fov / 2));
+      var z_distance = distance_vertical >= distance_horizontal ? distance_vertical : distance_horizontal;
 
-      var bbox_center = bbox.center;
+      camera.position.x = width/2;
+      camera.position.y = height/2;
+      camera.position.z = z_distance + max_z;
 
-      camera.position = bbox.center;
+      camera.lookAt(bbox_sphere.center());
 
-      camera.updateProjectionMatrix();
+      //var distance = bbox.distanceToPoint(camera.position);
+      ////var dist = height / 2 / Math.tan(Math.PI * camera.fov / 360);
 
-      //camera.updateMatrix();
+      //var from_cam_to_bbox = camera.position - bbox.center;
+
+      //var bbox_center = new THREE.Vector3(((bbox.max.x + bbox.min.x) / 2), ((bbox.max.y + bbox.min.y) / 2), ((bbox.max.z + bbox.min.z) / 2));
+
+      //camera.position.x = bbox_center.x;
+      //camera.position.y = bbox.max.y;
+
+      
+
+    }
+
+    function addSeismicBox()
+    {
+      // new shit
+      return;
+
+      if (displaySeismicBool == "off")
+        return;
+
+      var seismicBoxGeometry = new THREE.BoxGeometry(1000.0, 1000.0, 1000.0);
+
+      var seismicTexture = new THREE.TextureLoader().load("textures/seimic_inline.png");
+      seismicTexture.minFilter = THREE.LinearFilter;
+      seismicTexture.magFilter = THREE.LinearFilter;
+
+      var seismicMaterial = new THREE.MeshBasicMaterial({
+        map: seismicTexture,
+        side: THREE.DoubleSide
+      });
+      seismicMaterial.transparent = true;
+      seismicMaterial.transparent = 0.6;
+
+      seismicCubeMesh = new THREE.Mesh(seismicBoxGeometry, seismicMaterial);
+      seismicCubeMesh.position.set(100.0, 100.0, 2.0);
+
+      scene.add(seismicCubeMesh);
+
+
+    }
+
+    function changePlaneNormals(normal) {
+      //tranforming normals for slices..
+      var plane = new THREE.Plane();
+      // Assumes that "plane" is the source THREE.Plane object.
+      // Normalize the plane
+      var normPlane = new THREE.Plane().copy(plane).normalize();
+      // Rotate from (0,0,1) to the plane's normal
+      var quaternion = new THREE.Quaternion().setFromUnitVectors(normal, normPlane.normal);
+      // Calculate the translation
+      var position = new THREE.Vector3(
+        -normPlane.constant * normPlane.normal.x,
+        -normPlane.constant * normPlane.normal.y,
+        -normPlane.constant * normPlane.normal.z);
+      // Create the matrix
+      var matrix = new THREE.Matrix4().compose(position, quaternion, new THREE.Vector3(1, 1, 1));
+      // Transform the geometry (assumes that "geometry"
+      // is a THREE.PlaneGeometry or indeed any
+      // THREE.Geometry)
+
+      return matrix;
+    }
+
+    function addSeicmicSlices() {
+
+      var url_inline = "http://docker-svg.sis.slb.com/seismic/gullfaks?&amp;sliceaxis=0&amp;slicenum=100&amp;fmt=png&amp;flip=1&amp;max=6000";
+      var url_xline = "http://docker-svg.sis.slb.com/seismic/gullfaks?&amp;sliceaxis=1&amp;slicenum=100&amp;fmt=png&amp;flip=1&amp;max=6000";
+      var url_randomline = "http://docker-svg.sis.slb.com/seismic/gullfaks?&amp;sliceaxis=2&amp;slicenum=100&amp;fmt=png&amp;flip=1&amp;max=6000";
+
+
+      var inlineTexture = new THREE.TextureLoader().load(url_inline);
+      inlineTexture.minFilter = THREE.LinearFilter;
+      inlineTexture.magFilter = THREE.LinearFilter;
+
+      var xlineTexture = new THREE.TextureLoader().load(url_xline);
+      xlineTexture.minFilter = THREE.LinearFilter;
+      xlineTexture.magFilter = THREE.LinearFilter;
+
+      var zlineTexture = new THREE.TextureLoader().load(url_randomline);
+      zlineTexture.minFilter = THREE.LinearFilter;
+      zlineTexture.magFilter = THREE.LinearFilter;
+
+
+      var inlineMaterial = new THREE.MeshBasicMaterial({
+        map: inlineTexture,
+        side: THREE.DoubleSide
+      });
+      inlineMaterial.transparent = true;
+      inlineMaterial.transparent = 0.6;
+
+      var xlineMaterial = new THREE.MeshBasicMaterial({
+        map: xlineTexture,
+        side: THREE.DoubleSide
+      });
+      xlineMaterial.transparent = true;
+      xlineMaterial.transparent = 0.6;
+
+      var zlineMaterial = new THREE.MeshBasicMaterial({
+        map: zlineTexture,
+        side: THREE.DoubleSide
+      });
+      zlineMaterial.transparent = true;
+      zlineMaterial.transparent = 0.6;
+
+
+      var inlinePlaneGeometry = new THREE.PlaneGeometry(1000.0, 1000.0, 10.0, 10.0);
+      inlinePlaneGeometry.applyMatrix(changePlaneNormals(new THREE.Vector3(0, 1, 0)));
+      
+      if (displaySeismicSlice == "inline" || displaySeismicSlice == "all") {
+        inlinePlaneMesh = new THREE.Mesh(inlinePlaneGeometry, inlineMaterial);
+        inlinePlaneMesh.position.set(450, 400, 1500.0);
+        inlinePlaneMesh.normalMatrix = THREE.Vector3(1, 1, 0);
+        scene.add(inlinePlaneMesh);
+      }
+
+      if (displaySeismicSlice == "xline" || displaySeismicSlice == "all") {
+        var xLinePlaneGeometry = new THREE.PlaneGeometry(1000.0, 1000.0, 10.0, 10.0);
+        xLinePlaneGeometry.applyMatrix(changePlaneNormals(new THREE.Vector3(0, 0, 1)));
+        xLinePlaneMesh = new THREE.Mesh(xLinePlaneGeometry, xlineMaterial);
+        xLinePlaneMesh.position.set(450, 400, 1500.0);
+        scene.add(xLinePlaneMesh);
+      }
+
+      if (displaySeismicSlice == "zline" || displaySeismicSlice == "all") {
+        var zLinePlaneGeometry = new THREE.PlaneGeometry(1000.0, 1000.0, 10.0, 10.0);
+        zLinePlaneGeometry.applyMatrix(changePlaneNormals(new THREE.Vector3(1, 1, 1)));
+        zLinePlaneMesh = new THREE.Mesh(zLinePlaneGeometry, zlineMaterial);
+        zLinePlaneMesh.position.set(450, 400, 1500.0);
+        scene.add(zLinePlaneMesh);
+      }
+
+
+    }
+
+
+    function init()
+    {
+      container = document.getElementById("container");
+
+      raycaster = new THREE.Raycaster();
+      renderer = new THREE.WebGLRenderer();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      container.appendChild(renderer.domElement);
+      stats = new Stats();
+      container.appendChild(stats.dom);
+      renderer.domElement.addEventListener('mousemove', onmousemove, false);
+      window.addEventListener('resize', onWindowResize, false);
+
+      // add controls to the screen
+      controls = new THREE.TrackballControls(camera, renderer.domElement);
+      controls.rotateSpeed = 20.0;
+      controls.zoomSpeed = 1.2;
+      controls.rotateCamera();
+
+      controls.panSpeed = 0.8;
+      controls.noZoom = false;
+      controls.noPan = false;
+      controls.staticMoving = true;
+
+      controls.dynamicDampingFactor = 0.5;
+      controls.keys = [65, 83, 68];
+      controls.addEventListener('change', render);
+      // end of controls
+
+      //var bbox = new THREE.Box3().setFromObject(instanced_sphere);
+
+      //camera.position.z = 3000;
+      //camera.lookAt(bbox.center());
+
+      //var distance = bbox.distanceToPoint(camera.position);
+      ////var dist = height / 2 / Math.tan(Math.PI * camera.fov / 360);
+
+      //var from_cam_to_bbox = camera.position - bbox.center;
+
+      //var bbox_center = new THREE.Vector3(((bbox.max.x + bbox.min.x) / 2), ((bbox.max.y + bbox.min.y) / 2), ((bbox.max.z + bbox.min.z) / 2));
+
+      //camera.position.x = bbox_center.x;
+      //camera.position.y = bbox.max.y;
 
       // adding annotations, trial 1
       // create a canvas element
-      var canvas1 = document.createElement('canvas');
-      var context1 = canvas1.getContext('2d');
-      context1.font = "Bold 40px Arial";
-      context1.fillStyle = "rgba(255,0,0,0.95)";
-      context1.fillText('Hello, world!', 0, 30);
+      //var canvas1 = document.createElement('canvas');
+      //var context1 = canvas1.getContext('2d');
+      //context1.font = "Bold 40px Arial";
+      //context1.fillStyle = "rgba(255,0,0,0.95)";
+      //context1.fillText('Hello, world!', 0, 30);
 
       // canvas contents will be used for a texture
-      var texture1 = new THREE.Texture(canvas1)
-      texture1.needsUpdate = true;
+      //var texture1 = new THREE.Texture(canvas1)
+      //texture1.needsUpdate = true;
 
-      var material1 = new THREE.MeshBasicMaterial({ map: texture1, side: THREE.DoubleSide });
-      material1.transparent = true;
+      //var material1 = new THREE.MeshBasicMaterial({ map: texture1, side: THREE.DoubleSide });
+      //material1.transparent = true;
 
-      //var mesh1 = new THREE.Mesh(
-      //    new THREE.PlaneGeometry(canvas1.width, canvas1.height),
-      //    material1
-      //  );
-      //mesh1.position.set(0, 50, 0);
-      //scene.add(mesh1);
+    }
+
+    function addText()
+    {
+      // text stuff
+      var mesh1 = new THREE.Mesh(
+          new THREE.PlaneGeometry(canvas1.width, canvas1.height),
+          material1
+        );
+      mesh1.position.set(0, 50, 0);
+      scene.add(mesh1);
 
       var parent_text = new THREE.Object3D();
 
@@ -255,13 +773,10 @@
           new THREE.PlaneGeometry(canvas1.width, canvas1.height),
           material1
         );
-        text_mesh_object.position.set(translate_array_for_instancing[i3], translate_array_for_instancing[i3 + 1])
+        //text_mesh_object.position.set(translate_array_for_instancing[i3], translate_array_for_instancing[i3 + 1])
 
         parent_text.add(text_mesh_object);
       }
-
-
-
     }
 
     function toXYCoords(pos) {
@@ -366,7 +881,8 @@
       //}
 
       var time = performance.now() * 0.0001;
-      shaderMaterial.uniforms.time.value = time;
+      //shaderMaterial.uniforms.time.value = time;
+      shaderMaterial.uniforms.point_size.value = pointSize;
 
       var interval = 0.1;
       //instanced_sphere.rotation.x += 0.1;

@@ -1,0 +1,938 @@
+﻿<!DOCTYPE html>
+<html>
+	<head>
+		<meta charset=utf-8>
+		<title>My first Three.js app</title>
+		<style>
+			body { margin: 0; }
+			canvas { width: 100%; height: 100% }
+		</style>
+	</head>
+	<body>
+    <div id="container"></div>
+
+		<script src="js/three.js"></script>
+    <script src="js/Detector.js"></script>
+    <script src="js/libs/stats.min.js"></script>
+    <script src="js/controls/OrbitControls.js"></script>
+    <script src="js/MarchingCubes.js"></script>
+    <script src="js/libs/dat.gui.min.js"></script>
+    <script src="js/loaders/BinaryLoader.js"></script>
+
+    <script src="js/math/Lut.js"></script>
+
+    <script type="x-shader/x-vertex" id="vertexShader">
+
+      // switch on high precision floats
+      #ifdef GL_ES
+      precision highp float;
+      #endif
+
+      attribute vec3 translate;
+      attribute vec3 color;
+      uniform float time;
+
+      varying vec2 vUv;
+      varying vec3 vertex_normal;
+      varying vec3 vertex_color;
+
+      void main ()
+      {
+      // first, things to be sent to fragmentShader
+      vUv = uv;
+      vertex_normal = normal;
+      vertex_color = color;
+
+      // then, vertexShader related stuff
+      vec3 trTime = vec3(translate.x + time,translate.y + time,translate.z + time);
+      float scale =  sin( trTime.x * 2.1 ) + sin( trTime.y * 3.2 ) + sin( trTime.z * 4.3 ) + 0.0; // zhis i found on the 'internet'
+      scale = 1.0;  //just for the sake of simplicity
+
+      vec4 mvPosition = modelViewMatrix * vec4(translate, 1.0);
+      //vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+      mvPosition.xyz += position * scale;
+      //mvPosition.xyz += position;
+      vec3 mvPosition_new = position;
+
+
+      //gl_Position = projectionMatrix * vec4(mv);                                // new stuff
+      gl_Position = projectionMatrix * mvPosition;                                // multiple instanced geometry
+      //gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);   // just one geometry
+      }
+
+    </script>
+
+    <script type="x-shader/x-fragment" id="fragmentShader">
+
+      // switch on high precision floats
+      #ifdef GL_ES
+      precision highp float;
+      #endif
+
+      varying vec2 vUv;
+      varying vec3 vertex_normal;
+      varying vec3 vertex_color;
+
+      uniform float time;
+      uniform sampler2D map;
+
+      // random function in case i need it
+      float rand(vec2 co)
+      {
+      return fract(sin(dot(co.xy ,vec2(12.9898,78.233))) * 43758.5453);
+      }
+
+      // HSL to RGB Convertion helpers
+      vec3 HUEtoRGB(float H){
+      H = mod(H,1.0);
+      float R = abs(H * 6.0 - 3.0) - 1.0;
+      float G = 2.0 - abs(H * 6.0 - 2.0);
+      float B = 2.0 - abs(H * 6.0 - 4.0);
+      return clamp(vec3(R,G,B),0.0,1.0);
+      }
+
+      vec3 HSLtoRGB(vec3 HSL){
+      vec3 RGB = HUEtoRGB(HSL.x);
+      float C = (1.0 - abs(2.0 * HSL.z - 1.0)) * HSL.y;
+      return (RGB - 0.5) * C + HSL.z;
+      }
+
+      void main ()
+      {
+      vec3 light = vec3(0.6, 0.7, 1.0);
+      light = normalize(light);
+      float dot_product_light = max(0.0, dot(vertex_normal, light));
+
+      vec3 fixed_color = vec3(1, 0, 0.2);
+
+      float dot_product_color = max(0.0, dot(vertex_color, vec3(vUv,1.0)));
+
+      float scale =  max((sin(time) + cos (time)), 0.5);
+
+      vec4 diffuseColor = texture2D( map, vUv );
+
+      //gl_FragColor = vec4(diffuseColor.xyz * vec3(vertex_color * dot_product_light), diffuseColor.w);             //  adding color + light + texture to fake 3d sphere
+      gl_FragColor = vec4(vec3(vertex_color * dot_product_light), 1.0);                   //  adding color + light + color coming from outside
+      //gl_FragColor = vec4(vec3(fixed_color * dot_product_light), 1.0);                    //  adding color + light + fixed color
+      //gl_FragColor = vec4(vec3(vUv * rand(vUv) * dot_product_light, 0.0), 1.0);           //  adding color + light + random noise
+      //gl_FragColor = vec4(vec3(vUv * dot_product_light, 0.0), 1.0);                       //  adding color + light
+      //gl_FragColor = vec4(dot_product_light, dot_product_light, dot_product_light, 1.0);  //  logic for light with black&white;
+      //gl_FragColor = vec4(1.0, 0.0, 1.0, 1.0);                                            //  logic for no shading
+      //gl_FragColor = vec4(vec3(vUv, 0.0), 1.0);                                           // adding color
+      }
+
+    </script>
+
+    <!--<script>
+
+      /*
+        Three.js "tutorials by example"
+        Author: Lee Stemkoski
+        Date: July 2013 (three.js v59dev)
+      */
+
+      // MAIN
+
+      // standard global variables for Three.js
+      var container, scene, camera, renderer, controls, stats;
+      var clock = new THREE.Clock();
+
+      init();
+      animate();
+
+
+
+      // FUNCTIONS 		
+      function init() {
+        // SCENE
+        scene = new THREE.Scene();
+        // CAMERA
+        var SCREEN_WIDTH = window.innerWidth, SCREEN_HEIGHT = window.innerHeight;
+        var VIEW_ANGLE = 45, ASPECT = SCREEN_WIDTH / SCREEN_HEIGHT, NEAR = 0.1, FAR = 20000;
+        camera = new THREE.PerspectiveCamera(VIEW_ANGLE, ASPECT, NEAR, FAR);
+        scene.add(camera);
+        camera.position.set(10, 5, 10);
+        camera.lookAt(scene.position);
+        // RENDERER
+        if (Detector.webgl)
+          renderer = new THREE.WebGLRenderer({ antialias: true });
+        else
+          renderer = new THREE.CanvasRenderer();
+        renderer.setSize(SCREEN_WIDTH, SCREEN_HEIGHT);
+        container = document.getElementById('container');
+        container.appendChild(renderer.domElement);
+        // CONTROLS
+        controls = new THREE.OrbitControls(camera, renderer.domElement);
+        // STATS
+        stats = new Stats();
+        stats.domElement.style.position = 'absolute';
+        stats.domElement.style.bottom = '0px';
+        stats.domElement.style.zIndex = 100;
+        container.appendChild(stats.domElement);
+        // LIGHT
+        var light = new THREE.PointLight(0xff0000);
+        light.position.set(10, 0, 0);
+        scene.add(light);
+        var light = new THREE.PointLight(0x00cc00);
+        light.position.set(0, 10, 0);
+        scene.add(light);
+        var light = new THREE.PointLight(0x0000ff);
+        light.position.set(0, 0, 10);
+        scene.add(light);
+        var light = new THREE.PointLight(0x333333);
+        light.position.set(-10, -10, -10);
+        scene.add(light);
+        //var light = new THREE.AmbientLight(0x333333);
+        //scene.add(light);
+
+        ////////////
+        // CUSTOM //
+        ////////////
+
+        var axisMin = -5;
+        var axisMax = 5;
+        var axisRange = axisMax - axisMin;
+
+        scene.add(new THREE.AxisHelper(axisMax));
+
+        // The Marching Cubes Algorithm draws an isosurface of a given value.
+        // To use this for a Metaballs simulation, we need to:
+        // (1) Initialize the domain - create a grid of size*size*size points in space
+        // (2) Initialize the range  - a set of values, corresponding to each of the points, to zero.
+        // (3) Add 1 to values array for points on boundary of the sphere;
+        //       values should decrease to zero quickly for points away from sphere boundary.
+        // (4) Repeat step (3) as desired
+        // (5) Implement Marching Cubes algorithm with isovalue slightly less than 1.
+
+        var size = 30;
+        var size2 = size * size;
+        var size3 = size * size * size;
+
+        var points = [];
+
+        // generate the list of 3D points
+        for (var k = 0; k < size; k++)
+          for (var j = 0; j < size; j++)
+            for (var i = 0; i < size; i++) {
+              var x = axisMin + axisRange * i / (size - 1);
+              var y = axisMin + axisRange * j / (size - 1);
+              var z = axisMin + axisRange * k / (size - 1);
+              points.push(new THREE.Vector3(x, y, z));
+            }
+
+        var values = [];
+        // initialize values
+        for (var i = 0; i < size3; i++)
+          values[i] = 0;
+
+        // resetValues();
+        addBall(points, values, new THREE.Vector3(0, 3.5, 0));
+        addBall(points, values, new THREE.Vector3(0, 0, 0));
+        addBall(points, values, new THREE.Vector3(-1, -1, 0));
+
+        // isolevel = 0.5;
+        var geometry = marchingCubes(points, values, 0.5);
+
+        var colorMaterial = new THREE.MeshLambertMaterial({ color: 0xffffff, side: THREE.DoubleSide });
+        var mesh = new THREE.Mesh(geometry, colorMaterial);
+        scene.add(mesh);
+
+        // GUI for experimenting with parameters
+
+        gui = new dat.GUI();
+        this.parameters = { a: 0.51, b: 0.01, c: true };
+
+        var aGUI = gui.add(parameters, 'a').min(0.000).max(1.100).step(0.001).name("isolevel").listen();
+        aGUI.onChange(
+          function (value) {
+            scene.remove(mesh);
+            var newGeometry = marchingCubes(points, values, parameters.a);
+            mesh = new THREE.Mesh(newGeometry, colorMaterial);
+            scene.add(mesh);
+          }
+        );
+
+        this.bGUI = gui.add(parameters, 'b').min(-3.500).max(3.500).step(0.001).name("middle ball height").listen();
+        bGUI.onChange(
+          function (value) {
+            resetValues(values);
+            addBall(points, values, new THREE.Vector3(0, 3.5, 0));
+            addBall(points, values, new THREE.Vector3(0, parameters.b, 0));
+            addBall(points, values, new THREE.Vector3(-1, -1, 0));
+
+            scene.remove(mesh);
+            var newGeometry = marchingCubes(points, values, parameters.a);
+            mesh = new THREE.Mesh(newGeometry, colorMaterial);
+            scene.add(mesh);
+          }
+        );
+
+        var cGUI = gui.add(parameters, 'c').name("animate values");
+
+      }
+
+      function animate() {
+        requestAnimationFrame(animate);
+        render();
+        update();
+      }
+
+      function update() {
+        controls.update();
+        stats.update();
+
+        // animation
+        if (parameters.c) {
+          var t = clock.getElapsedTime();
+          bGUI.setValue(3.5 * Math.sin(0.5 * t));
+        }
+      }
+
+      function render() {
+        renderer.render(scene, camera);
+      }
+
+      // METABALLS FUNCTIONS
+
+      function resetValues(values) {
+        for (var i = 0; i < values.length; i++)
+          values[i] = 0;
+      }
+
+      // add values corresponding to a ball with radius 1 to values array
+      function addBall(points, values, center) {
+        for (var i = 0; i < values.length; i++) {
+          var OneMinusD2 = 1.0 - center.distanceToSquared(points[i]);
+          values[i] += Math.exp(-(OneMinusD2 * OneMinusD2));
+        }
+      }
+
+
+      // MARCHING CUBES ALGORITHM
+      // parameters: domain points, range values, isolevel 
+      // returns: geometry
+      function marchingCubes(points, values, isolevel) {
+        // assumes the following global values have been defined: 
+        //   THREE.edgeTable, THREE.triTable
+
+        var size = Math.round(Math.pow(values.length, 1 / 3));
+        var size2 = size * size;
+        var size3 = size * size * size;
+
+        // Vertices may occur along edges of cube, when the values at the edge's endpoints
+        //   straddle the isolevel value.
+        // Actual position along edge weighted according to function values.
+        var vlist = new Array(12);
+
+        var geometry = new THREE.Geometry();
+        var vertexIndex = 0;
+
+        for (var z = 0; z < size - 1; z++)
+          for (var y = 0; y < size - 1; y++)
+            for (var x = 0; x < size - 1; x++) {
+              // index of base point, and also adjacent points on cube
+              var p = x + size * y + size2 * z,
+                px = p + 1,
+                py = p + size,
+                pxy = py + 1,
+                pz = p + size2,
+                pxz = px + size2,
+                pyz = py + size2,
+                pxyz = pxy + size2;
+
+              // store scalar values corresponding to vertices
+              var value0 = values[p],
+                value1 = values[px],
+                value2 = values[py],
+                value3 = values[pxy],
+                value4 = values[pz],
+                value5 = values[pxz],
+                value6 = values[pyz],
+                value7 = values[pxyz];
+
+              // place a "1" in bit positions corresponding to vertices whose
+              //   isovalue is less than given constant.
+
+              var cubeindex = 0;
+              if (value0 < isolevel) cubeindex |= 1;
+              if (value1 < isolevel) cubeindex |= 2;
+              if (value2 < isolevel) cubeindex |= 8;
+              if (value3 < isolevel) cubeindex |= 4;
+              if (value4 < isolevel) cubeindex |= 16;
+              if (value5 < isolevel) cubeindex |= 32;
+              if (value6 < isolevel) cubeindex |= 128;
+              if (value7 < isolevel) cubeindex |= 64;
+
+              // bits = 12 bit number, indicates which edges are crossed by the isosurface
+              var bits = THREE.edgeTable[cubeindex];
+
+              // if none are crossed, proceed to next iteration
+              if (bits === 0) continue;
+
+              // check which edges are crossed, and estimate the point location
+              //    using a weighted average of scalar values at edge endpoints.
+              // store the vertex in an array for use later.
+              var mu = 0.5;
+
+              // bottom of the cube
+              if (bits & 1) {
+                mu = (isolevel - value0) / (value1 - value0);
+                vlist[0] = points[p].clone().lerp(points[px], mu);
+              }
+              if (bits & 2) {
+                mu = (isolevel - value1) / (value3 - value1);
+                vlist[1] = points[px].clone().lerp(points[pxy], mu);
+              }
+              if (bits & 4) {
+                mu = (isolevel - value2) / (value3 - value2);
+                vlist[2] = points[py].clone().lerp(points[pxy], mu);
+              }
+              if (bits & 8) {
+                mu = (isolevel - value0) / (value2 - value0);
+                vlist[3] = points[p].clone().lerp(points[py], mu);
+              }
+              // top of the cube
+              if (bits & 16) {
+                mu = (isolevel - value4) / (value5 - value4);
+                vlist[4] = points[pz].clone().lerp(points[pxz], mu);
+              }
+              if (bits & 32) {
+                mu = (isolevel - value5) / (value7 - value5);
+                vlist[5] = points[pxz].clone().lerp(points[pxyz], mu);
+              }
+              if (bits & 64) {
+                mu = (isolevel - value6) / (value7 - value6);
+                vlist[6] = points[pyz].clone().lerp(points[pxyz], mu);
+              }
+              if (bits & 128) {
+                mu = (isolevel - value4) / (value6 - value4);
+                vlist[7] = points[pz].clone().lerp(points[pyz], mu);
+              }
+              // vertical lines of the cube
+              if (bits & 256) {
+                mu = (isolevel - value0) / (value4 - value0);
+                vlist[8] = points[p].clone().lerp(points[pz], mu);
+              }
+              if (bits & 512) {
+                mu = (isolevel - value1) / (value5 - value1);
+                vlist[9] = points[px].clone().lerp(points[pxz], mu);
+              }
+              if (bits & 1024) {
+                mu = (isolevel - value3) / (value7 - value3);
+                vlist[10] = points[pxy].clone().lerp(points[pxyz], mu);
+              }
+              if (bits & 2048) {
+                mu = (isolevel - value2) / (value6 - value2);
+                vlist[11] = points[py].clone().lerp(points[pyz], mu);
+              }
+
+              // construct triangles -- get correct vertices from triTable.
+              var i = 0;
+              cubeindex <<= 4;  // multiply by 16... 
+              // "Re-purpose cubeindex into an offset into triTable." 
+              //  since each row really isn't a row.
+
+              // the while loop should run at most 5 times,
+              //   since the 16th entry in each row is a -1.
+              while (THREE.triTable[cubeindex + i] != -1) {
+                var index1 = THREE.triTable[cubeindex + i];
+                var index2 = THREE.triTable[cubeindex + i + 1];
+                var index3 = THREE.triTable[cubeindex + i + 2];
+
+                geometry.vertices.push(vlist[index1].clone());
+                geometry.vertices.push(vlist[index2].clone());
+                geometry.vertices.push(vlist[index3].clone());
+                var face = new THREE.Face3(vertexIndex, vertexIndex + 1, vertexIndex + 2);
+                geometry.faces.push(face);
+
+                geometry.faceVertexUvs[0].push([new THREE.Vector2(0, 0), new THREE.Vector2(0, 1), new THREE.Vector2(1, 1)]);
+
+                vertexIndex += 3;
+                i += 3;
+              }
+            }
+
+        geometry.mergeVertices();
+        geometry.computeFaceNormals();
+        geometry.computeVertexNormals();
+
+        return geometry;
+      }
+
+
+
+    </script>-->
+
+		<!--<script>
+      var scene = new THREE.Scene();
+      var camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+
+
+      var geometry = new THREE.BoxGeometry(1, 1, 1);
+      var material = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+      var cube = new THREE.Mesh(geometry, material);
+      //scene.add(cube);
+
+      camera.position.z = 100;
+
+      var ballGeo = new THREE.SphereGeometry(10, 50, 50);
+      var material = new THREE.MeshLambertMaterial({ color: 0x00ff00, shading: THREE.SmoothShading });
+      var ball = new THREE.Mesh(ballGeo, material);
+      ball.position.z = 10;
+      //scene.add(ball);
+
+      var light = new THREE.PointLight(0x0040ff, 100, 100);
+      light.position.x = 10;
+      light.position.y = 50;
+      light.position.z = 50;
+      light.intensity = 100;
+      scene.add(light);
+      //scene.add(new THREE.AmbientLight(0x0000F0));
+
+      var pendulumGeo = new THREE.CylinderGeometry(1, 1, 50, 16);
+      ball.updateMatrix();
+      pendulumGeo.merge(ball.geometry, ball.matrix);
+
+      var pendulum = new THREE.Mesh(pendulumGeo, material);
+      scene.add(pendulum);
+
+
+
+
+      var renderer = new THREE.WebGLRenderer();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      document.body.appendChild(renderer.domElement);
+
+      function render() {
+        requestAnimationFrame(render);
+        renderer.render(scene, camera);
+
+        pendulum.rotation.x += 0.1;
+        pendulum.rotation.y += 0.02;
+      }
+      
+      render();
+
+		</script>-->
+
+    <!--<script>
+
+      var container, stats;
+
+      var camera, scene, renderer, lut, legendLayout;
+
+      var position;
+
+      var mesh;
+
+      var colorMap;
+      var numberOfColors;
+
+      init();
+      animate();
+
+      function init() {
+
+        container = document.getElementById('container');
+
+        // SCENE
+        scene = new THREE.Scene();
+
+        // CAMERA
+        camera = new THREE.PerspectiveCamera(20, window.innerWidth / window.innerHeight, 1, 10000);
+        camera.name = 'camera';
+        scene.add(camera);
+
+        stats = new Stats();
+        container.appendChild(stats.dom);
+
+        // LIGHT
+        var ambientLight = new THREE.AmbientLight(0x444444);
+        ambientLight.name = 'ambientLight';
+        scene.add(ambientLight);
+
+        colorMap = 'rainbow';
+        numberOfColors = 512;
+
+        legendLayout = 'vertical';
+
+        loadModel(colorMap, numberOfColors, legendLayout);
+
+        camera.position.x = 17;
+        camera.position.y = 9;
+        camera.position.z = 32;
+
+        var directionalLight = new THREE.DirectionalLight(0xffffff, 0.7);
+        directionalLight.position.x = 17;
+        directionalLight.position.y = 9;
+        directionalLight.position.z = 30;
+        directionalLight.name = 'directionalLight';
+        scene.add(directionalLight);
+
+        renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setClearColor(0xffffff);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        container.appendChild(renderer.domElement);
+
+        window.addEventListener('resize', onWindowResize, false);
+
+        window.addEventListener("keydown", onKeyDown, true);
+
+      }
+
+      var rotWorldMatrix;
+
+      function rotateAroundWorldAxis(object, axis, radians) {
+
+        if (!axis) return;
+
+        rotWorldMatrix = new THREE.Matrix4();
+        rotWorldMatrix.makeRotationAxis(axis.normalize(), radians);
+        rotWorldMatrix.multiply(object.matrix);
+
+        object.matrix = rotWorldMatrix;
+        object.rotation.setFromRotationMatrix(object.matrix);
+
+      }
+
+      function onWindowResize() {
+
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        render();
+
+      }
+
+      function animate() {
+
+        requestAnimationFrame(animate);
+
+        render();
+        stats.update();
+
+      }
+
+      function render() {
+
+        rotateAroundWorldAxis(mesh, position, Math.PI / 180);
+
+        renderer.render(scene, camera);
+
+      }
+
+      function loadModel(colorMap, numberOfColors, legendLayout) {
+
+        var loader = new THREE.BufferGeometryLoader();
+
+        loader.load("models/json/pressure.json", function (geometry) {
+
+          geometry.computeVertexNormals();
+          geometry.normalizeNormals();
+
+          var material = new THREE.MeshLambertMaterial({
+
+            side: THREE.DoubleSide,
+            color: 0xF5F5F5,
+            vertexColors: THREE.VertexColors
+
+          });
+
+          var lutColors = [];
+
+          lut = new THREE.Lut(colorMap, numberOfColors);
+
+          lut.setMax(2000);
+          lut.setMin(0);
+
+          for (var i = 0; i < geometry.attributes.pressure.array.length; i++) {
+
+            var colorValue = geometry.attributes.pressure.array[i];
+
+            color = lut.getColor(colorValue);
+
+            if (color == undefined) {
+
+              console.log("ERROR: " + colorValue);
+
+            } else {
+
+              lutColors[3 * i] = color.r;
+              lutColors[3 * i + 1] = color.g;
+              lutColors[3 * i + 2] = color.b;
+
+            }
+
+          }
+
+          geometry.addAttribute('color', new THREE.BufferAttribute(new Float32Array(lutColors), 3));
+
+          mesh = new THREE.Mesh(geometry, material);
+
+          geometry.computeBoundingBox();
+          var boundingBox = geometry.boundingBox;
+          var center = boundingBox.center();
+
+          if (position === undefined) {
+
+            position = new THREE.Vector3(center.x, center.y, center.z);
+
+          }
+
+          scene.add(mesh);
+
+          if (legendLayout) {
+
+            if (legendLayout == 'horizontal') {
+
+              legend = lut.setLegendOn({ 'layout': 'horizontal', 'position': { 'x': 21, 'y': 6, 'z': 5 } });
+
+            }
+
+            else {
+
+              legend = lut.setLegendOn();
+
+            }
+
+            scene.add(legend);
+
+            var labels = lut.setLegendLabels({ 'title': 'Pressure', 'um': 'Pa', 'ticks': 5 });
+
+            scene.add(labels['title']);
+
+            for (var i = 0; i < Object.keys(labels['ticks']).length; i++) {
+
+              scene.add(labels['ticks'][i]);
+              scene.add(labels['lines'][i]);
+
+            }
+
+          }
+
+        });
+
+      }
+
+      function cleanScene() {
+
+        var elementsInTheScene = scene.children.length;
+
+        for (var i = elementsInTheScene - 1; i > 0; i--) {
+
+          if (scene.children[i].name != 'camera' &&
+						 scene.children[i].name != 'ambientLight' &&
+						 scene.children[i].name != 'directionalLight') {
+
+            scene.remove(scene.children[i]);
+
+          }
+
+        }
+
+      }
+
+
+      function onKeyDown(e) {
+
+        var maps = ['rainbow', 'cooltowarm', 'blackbody', 'grayscale'];
+
+        var colorNumbers = ['16', '128', '256', '512'];
+
+        if (e.keyCode == 65) {
+
+          cleanScene();
+
+          var index = maps.indexOf(colorMap) >= maps.length - 1 ? 0 : maps.indexOf(colorMap) + 1;
+
+          colorMap = maps[index];
+
+          loadModel(colorMap, numberOfColors, legendLayout);
+
+        } else if (e.keyCode == 83) {
+
+          cleanScene();
+
+          var index = colorNumbers.indexOf(numberOfColors) >= colorNumbers.length - 1 ? 0 : colorNumbers.indexOf(numberOfColors) + 1;
+
+          numberOfColors = colorNumbers[index];
+
+          loadModel(colorMap, numberOfColors, legendLayout);
+
+        } else if (e.keyCode == 68) {
+
+          if (!legendLayout) {
+
+            cleanScene();
+
+            legendLayout = 'vertical';
+
+            loadModel(colorMap, numberOfColors, legendLayout);
+
+          } else {
+
+            cleanScene();
+
+            legendLayout = lut.setLegendOff();
+
+            loadModel(colorMap, numberOfColors, legendLayout);
+
+          }
+
+        } else if (e.keyCode == 70) {
+
+          cleanScene();
+
+          if (!legendLayout) return false;
+
+          lut.setLegendOff();
+
+          if (legendLayout == 'horizontal') {
+
+            legendLayout = 'vertical';
+
+          } else {
+
+            legendLayout = 'horizontal';
+
+          }
+
+          loadModel(colorMap, numberOfColors, legendLayout);
+
+        }
+
+      }
+
+
+    </script>-->
+
+
+    <script>
+      var container, stats;
+
+      var camera, scene, renderer;
+
+      var points;
+
+      init();
+      animate();
+
+      function init() {
+
+        container = document.getElementById('container');
+
+        //
+
+        camera = new THREE.PerspectiveCamera(27, window.innerWidth / window.innerHeight, 5, 3500);
+        camera.position.z = 2750;
+
+        scene = new THREE.Scene();
+        scene.fog = new THREE.Fog(0x050505, 2000, 3500);
+
+        //
+
+        var particles = 500000;
+
+        var geometry = new THREE.BufferGeometry();
+
+        var positions = new Float32Array(particles * 3);
+        var colors = new Float32Array(particles * 3);
+
+        var color = new THREE.Color();
+
+        var n = 1000, n2 = n / 2; // particles spread in the cube
+
+        for (var i = 0; i < positions.length; i += 3) {
+
+          // positions
+
+          var x = Math.random() * n - n2;
+          var y = Math.random() * n - n2;
+          var z = Math.random() * n - n2;
+
+          positions[i] = x;
+          positions[i + 1] = y;
+          positions[i + 2] = z;
+
+          // colors
+
+          var vx = (x / n) + 0.5;
+          var vy = (y / n) + 0.5;
+          var vz = (z / n) + 0.5;
+
+          color.setRGB(vx, vy, vz);
+
+          colors[i] = color.r;
+          colors[i + 1] = color.g;
+          colors[i + 2] = color.b;
+
+        }
+
+        geometry.addAttribute('position', new THREE.BufferAttribute(positions, 3));
+        geometry.addAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+        geometry.computeBoundingSphere();
+
+        //
+
+        var material = new THREE.PointsMaterial({ size: 15, vertexColors: THREE.VertexColors });
+
+        points = new THREE.Points(geometry, material);
+        scene.add(points);
+
+        //
+
+        renderer = new THREE.WebGLRenderer({ antialias: false });
+        renderer.setClearColor(scene.fog.color);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.setSize(window.innerWidth, window.innerHeight);
+
+        container.appendChild(renderer.domElement);
+
+        //
+
+        stats = new Stats();
+        container.appendChild(stats.dom);
+
+        //
+
+        window.addEventListener('resize', onWindowResize, false);
+
+      }
+
+      function onWindowResize() {
+
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+
+        renderer.setSize(window.innerWidth, window.innerHeight);
+
+      }
+
+      //
+
+      function animate() {
+
+        requestAnimationFrame(animate);
+
+        render();
+        stats.update();
+
+      }
+
+      function render() {
+
+        var time = Date.now() * 0.001;
+
+        points.rotation.x = time * 0.25;
+        points.rotation.y = time * 0.5;
+
+        renderer.render(scene, camera);
+
+      }
+    </script>
+
+	</body>
+</html>

@@ -1,0 +1,490 @@
+#Inventor V8.0 ascii
+
+ DEF Unscaled3DScene Separator {
+  renderCaching OFF
+
+  Environment {
+	 ambientIntensity 0.35
+  }
+  DEF Decoration_3DRoot Separator {
+	 renderCaching OFF
+
+	 DEF View3_Interpretation_window Separator {
+
+	  Separator {
+		 renderCaching OFF
+		 fastEditing KEEP_ZBUFFER
+
+		 Material {
+		 }
+		 DrawStyle {
+		 }
+		 DepthBuffer {
+		  test TRUE 
+		 }
+		 Switch {
+
+		  VertexProperty {
+		  }
+		  LineSet {
+		  }		 }	  }	 }  }
+  DEF NonClippedMain3DRoot Separator {
+	 renderCaching OFF
+  }
+  Callback {
+  }
+  DEF ClippedMain3DRoot Separator {
+	 renderCaching OFF
+
+	 ClipPlane {
+	  on FALSE 
+	 }
+	 ClipPlane {
+	  on FALSE 
+	 }
+	 ClipPlane {
+	  on FALSE 
+	 }
+	 ClipPlane {
+	  on FALSE 
+	 }
+	 ClipPlane {
+	  on FALSE 
+	 }
+	 ClipPlane {
+	  on FALSE 
+	 }
+	 DEF Main3DVolumeRoot Separator {
+	  renderCaching OFF
+	 }
+	 DEF View3_Surface Separator {
+	  renderCaching OFF
+
+	  Separator {
+
+		 Separator {
+		  fields [  ]
+
+		  Separator {
+
+			 DrawStyle {
+			  pointSize 10
+			 }
+			 Material {
+			  ambientColor 0.8 0.8 0.8
+			  diffuseColor 0.7 0.7 0.7
+			  specularColor 0.5 0.5 0.5
+			  shininess 0.6
+			 }
+			 Separator {
+
+			  Scale {
+				 scaleFactor 1 1 0.25
+			  }
+			  ShaderProgram {
+				 shaderObject [ 4 ,
+				    
+				  VertexShader {
+					 sourceType GLSL_PROGRAM
+					 sourceProgram "#version 330 compatibility
+#define POINTSTYLE_SPHERE_2D
+#define OUTPUT_COLOR
+
+void main()
+{ 
+  gl_Position = gl_Vertex;
+  gl_TexCoord[0] = gl_MultiTexCoord0;
+}"
+				  } ,
+				    
+				  GeometryShader {
+					 sourceType GLSL_PROGRAM
+					 sourceProgram "#version 330 compatibility
+#define POINTSTYLE_SPHERE_2D
+#define OUTPUT_COLOR
+
+layout(points) in;
+// specify number of vertices out in case this allows the driver to optimize
+#ifdef POINTSTYLE_BOX_3D
+layout(triangle_strip, max_vertices = 14) out;
+#endif
+#ifdef POINTSTYLE_SQUARE_3D
+layout(triangle_strip, max_vertices = 4) out;
+#endif
+#ifdef POINTSTYLE_SPHERE_3D
+layout(triangle_strip, max_vertices = 4) out;
+#endif
+#ifdef POINTSTYLE_SQUARE_2D
+layout(points, max_vertices = 1) out;
+#endif
+#ifdef POINTSTYLE_SPHERE_2D
+layout(points, max_vertices = 1) out;
+#endif
+
+uniform vec2 iv_WindowSize = vec2(1.0, 1.0);
+uniform vec3 iv_PointScale;
+uniform vec2 iv_PointLimits = vec2(5.0, 100.0);
+        
+out vec3 iv_Vertex;
+flat out vec3 iv_Position;
+out vec4 iv_EyePos;
+out vec2 iv_QuadCoord;
+out vec3 PointScale;
+
+void EmitClipDistance()
+{
+#ifdef CLIPPING_ENABLED
+  vec4 eyepos = gl_ModelViewMatrix * gl_in[0].gl_Position;
+  for (int i = 0; i < gl_MaxClipPlanes; i++) {
+    gl_ClipDistance[i] = dot(gl_ClipPlane[i], eyepos);
+  }
+#endif
+}
+
+const vec2 view_quad[4] = vec2[4](vec2(-1.0, -1.0 ),
+				  vec2( 1.0, -1.0 ),
+				  vec2(-1.0,  1.0 ),
+				  vec2( 1.0,  1.0 ));
+        
+const vec3 cube_vertices[8] =  vec3[8](vec3(-1.0, -1.0, -1.0 ),
+				       vec3(-1.0, -1.0,  1.0 ),
+				       vec3(-1.0,  1.0, -1.0 ),
+				       vec3(-1.0,  1.0,  1.0 ),
+				       vec3( 1.0, -1.0, -1.0 ),
+				       vec3( 1.0, -1.0,  1.0 ),
+				       vec3( 1.0,  1.0, -1.0 ),
+				       vec3( 1.0,  1.0,  1.0 ));
+        
+const int cube_indices[14] =  int[14](5, 1, 4, 0, 2, 1, 3, 
+    				      5, 7, 4, 6, 2, 7, 3);
+        
+const vec4 frustum_planes[6] = vec4[6](vec4( 1.0, 0.0, 0.0, 1.0 ),
+				       vec4(-1.0, 0.0, 0.0, 1.0 ),
+				       vec4( 0.0, 1.0, 0.0, 1.0 ),
+				       vec4( 0.0,-1.0, 0.0, 1.0 ),
+				       vec4( 0.0, 0.0, 1.0, 1.0 ),
+				       vec4( 0.0, 0.0,-1.0, 1.0 ));
+        
+        
+float ComputePixelSize()
+{
+  float radius = length(iv_PointScale);
+
+  vec4 p0 = gl_ModelViewMatrix * gl_in[0].gl_Position;
+  vec4 p1 = gl_ModelViewMatrix * gl_in[0].gl_Position;
+
+  p0.x += radius;
+  p1.x -= radius;
+
+  p0 = gl_ProjectionMatrix * p0;
+  p1 = gl_ProjectionMatrix * p1;
+
+  p0 /= p0.w;
+  p1 /= p1.w;
+
+  return distance(p1.x, p0.x) * iv_WindowSize.x * 0.5;
+}
+
+void ComputePointScale()
+{
+  float scale = 1.0;
+  float size = max(ComputePixelSize(), 0.001);
+#ifdef POINTSTYLE_SPHERE_3D
+  if (size < iv_PointLimits.x) scale = iv_PointLimits.x / size;
+#endif
+  if (size > iv_PointLimits.y) scale = iv_PointLimits.y / size;
+  PointScale = iv_PointScale * scale;
+}
+    
+bool CullTest(const in float radius)
+{
+#ifdef POINTSTYLE_SQUARE_2D
+  return true;
+#endif
+#ifdef POINTSTYLE_SPHERE_2D
+  return true;
+#endif
+
+  mat4 cliptoviewspace = transpose(gl_ProjectionMatrix);
+  vec4 p = gl_ModelViewMatrix * gl_in[0].gl_Position;
+          
+  for (int i = 0; i < 6; i++) {
+    vec4 plane = cliptoviewspace * frustum_planes[i];
+    vec3 n = normalize(plane).xyz;
+    if (dot(p.xyz, n) + radius < 0.0) return false;
+  }
+  return true;
+}
+        
+void OutputQuad()
+{
+  ComputePointScale();
+  EmitClipDistance();
+  for (int i = 0; i < 4; i++) {
+    iv_QuadCoord = view_quad[i];
+    gl_Position = gl_ModelViewMatrix * gl_in[0].gl_Position;
+    gl_Position.xy += view_quad[i] * PointScale.xy;
+    gl_Position = gl_ProjectionMatrix * gl_Position;
+    EmitVertex();
+  }
+  EndPrimitive();
+}
+
+void OutputPoint()
+{
+  gl_Position = gl_ModelViewProjectionMatrix * gl_in[0].gl_Position;
+  EmitClipDistance();
+  EmitVertex();
+  EndPrimitive();
+}
+    
+void OutputBox()
+{
+  ComputePointScale();
+  EmitClipDistance();
+  for (int i = 0; i < 14; i++) {
+    iv_Vertex = cube_vertices[cube_indices[i]];
+    gl_Position = gl_in[0].gl_Position;
+    gl_Position.xyz += iv_Vertex * PointScale;
+    gl_Position = gl_ModelViewProjectionMatrix * gl_Position;
+    EmitVertex();
+  }
+  EndPrimitive();
+}
+
+void main()
+{
+  // apply filter
+  if (gl_in[0].gl_TexCoord[0].r < 0.0) {
+    return;
+  }
+
+  // frustum culling
+  if (!CullTest(length(iv_PointScale))) {
+    return;
+  }
+    
+  gl_PrimitiveID = gl_PrimitiveIDIn;
+  iv_Position = gl_in[0].gl_Position.xyz;
+  gl_TexCoord[0] = gl_in[0].gl_TexCoord[0];
+        
+#ifdef POINTSTYLE_BOX_3D
+  OutputBox();
+#endif
+  
+#ifdef POINTSTYLE_SPHERE_3D
+  iv_EyePos = gl_ModelViewMatrix * gl_in[0].gl_Position;
+  OutputQuad();
+#endif
+  
+#ifdef POINTSTYLE_SQUARE_3D
+  OutputQuad();
+#endif
+  
+#ifdef POINTSTYLE_SQUARE_2D
+  OutputPoint();
+#endif
+  
+#ifdef POINTSTYLE_SPHERE_2D
+  OutputPoint();
+#endif
+}"
+				  } ,
+				    
+				  FragmentShader {
+					 sourceType GLSL_PROGRAM
+					 sourceProgram "#version 330 compatibility
+#define POINTSTYLE_SPHERE_2D
+#define OUTPUT_COLOR
+
+//!oiv_include <Inventor/oivDepthPeeling_frag.h>
+
+in vec4 iv_EyePos;
+in vec3 iv_Vertex;
+flat in vec3 iv_Position;
+in vec2 iv_QuadCoord;
+in vec3 PointScale;
+    
+#ifdef OUTPUT_INDEX
+layout(location = 0) out uint Index;
+layout(location = 1) out vec3 Position;
+uniform int iv_StartIndex = 0;
+void OutputIndex()
+{
+  Index = uint(gl_PrimitiveID + iv_StartIndex + 1);
+  Position = iv_Position;
+}
+#endif
+        
+vec4 computeLighting(vec3 n);
+        
+float ComputeFragDepth(const in vec3 p)
+{
+  vec4 pos = iv_EyePos;
+  pos.z += p.z * PointScale.z;
+  pos = gl_ProjectionMatrix * pos;
+  return (pos.z / pos.w + 1.0) / 2.0;
+}
+        
+vec4 ComputeFragColor(const in vec3 n)
+{
+  vec4 color = computeLighting(n);
+  color.rgb *= gl_TexCoord[0].rgb;
+  return vec4(color.rgb, 1.0);
+}
+
+void RenderSphere()
+{
+  float x = iv_QuadCoord.s;
+  float y = iv_QuadCoord.t;
+  float z = 1.0 - x*x - y*y;
+        
+  if (z <= 0.0) discard;
+  z = sqrt(z);
+  vec3 n = vec3(x, y, z);
+#ifdef OUTPUT_INDEX
+  OutputIndex();
+#else
+  if (OivDepthPeel(gl_FragCoord.xyz)) {
+    OivDepthPeelingOutputColor(ComputeFragColor(n));
+  }
+#endif
+  gl_FragDepth = ComputeFragDepth(n);
+}
+
+void
+RenderSphere2D()
+{
+  if (length(gl_PointCoord.st - vec2(0.5)) > 0.5)
+    discard;
+
+#ifdef OUTPUT_INDEX
+  OutputIndex();
+#else
+  if (OivDepthPeel(gl_FragCoord.xyz)) {
+    vec4 color = vec4(1.0);
+    color.rgb = vec3(sqrt(1.0 - 0.65*(gl_PointCoord.s*gl_PointCoord.s + gl_PointCoord.t*gl_PointCoord.t)));
+    color.rgb *= gl_TexCoord[0].rgb;
+    OivDepthPeelingOutputColor(color);
+  }
+#endif
+}
+    
+void RenderBox()
+{
+#ifdef OUTPUT_INDEX
+  OutputIndex();
+#else
+  if (OivDepthPeel(gl_FragCoord.xyz)) {
+    vec3 p = abs(iv_Vertex);
+    float m = max(max(p.x, p.y), p.z);
+    
+    vec3 n = vec3(iv_Vertex.x, 0.0, 0.0);
+    if (m == p.y) n = vec3(0.0, iv_Vertex.y, 0.0);
+    if (m == p.z) n = vec3(0.0, 0.0, iv_Vertex.z);
+   
+    OivDepthPeelingOutputColor(ComputeFragColor(normalize(gl_NormalMatrix * n)));
+   }
+#endif
+}
+        
+void RenderSquare()
+{
+#ifdef OUTPUT_INDEX
+  OutputIndex();
+#else
+  if (OivDepthPeel(gl_FragCoord.xyz)) {
+    vec4 color = vec4(1.0);
+    color.rgb *= gl_TexCoord[0].rgb;
+    OivDepthPeelingOutputColor(color);
+  }
+#endif
+}
+        
+void main()
+{
+#ifdef POINTSTYLE_BOX_3D
+  RenderBox();
+#endif
+#ifdef POINTSTYLE_SPHERE_3D
+  RenderSphere();
+#endif
+#ifdef POINTSTYLE_SQUARE_3D
+  RenderSquare();
+#endif
+#ifdef POINTSTYLE_SQUARE_2D
+  RenderSquare();
+#endif
+#ifdef POINTSTYLE_SPHERE_2D
+  RenderSphere2D();
+#endif
+}"
+				  } ,
+				    
+				  FragmentShader {
+					 sourceType GLSL_PROGRAM
+					 sourceProgram "void
+DirectionalLight(const in int i,
+    		 const in vec3 normal,
+    		 const in float shininess,
+    		 inout vec4 ambient,
+    		 inout vec4 diffuse,
+    		 inout vec4 specular)
+{
+  vec3 lightdir = gl_LightSource[i].position.xyz;
+  vec3 halfvec = gl_LightSource[i].halfVector.xyz;
+      
+  float nDotVP = max(0.0, dot(normal, normalize(lightdir)));
+  float nDotHV = max(0.0, dot(normal, normalize(halfvec)));
+      
+  float pf;
+  if (nDotVP == 0.0) {
+    pf = 0.0;
+  } else {
+    pf = pow(nDotHV, shininess);
+  }
+      
+  ambient  += gl_LightSource[i].ambient;
+  diffuse  += gl_LightSource[i].diffuse * nDotVP;
+  specular += gl_LightSource[i].specular * pf;
+}
+    
+vec4 computeLighting(vec3 n)
+{
+  vec4 color = vec4(0.0);
+  vec4 ambient = vec4(0.0);
+  vec4 diffuse = vec4(0.0);
+  vec4 specular = vec4(0.0);
+      
+  DirectionalLight(0, n, gl_FrontMaterial.shininess, ambient, diffuse, specular);
+    
+  color += gl_FrontLightModelProduct.sceneColor +
+    ambient * gl_FrontMaterial.ambient +
+    diffuse * gl_FrontMaterial.diffuse +
+    specular * gl_FrontMaterial.specular;
+    
+  return color;
+}"
+				  } ]
+				 geometryInputType POINTS_INPUT
+				 geometryOutputType POINTS_OUTPUT
+			  }
+			  Separator {
+
+				 PointSet {
+				  vertexProperty  =				  . vertexProperty
+				  startIndex 0
+				  numPoints 10201
+				 }			  }			 }		  }
+		  Separator {
+		  }
+		  Separator {
+		  }
+		  Separator {
+		  }		 }	  }	 }  }
+  DEF NonClippedAfterMain3DRoot Separator {
+	 renderCaching OFF
+  }
+  Callback {
+  } 
+}
