@@ -4,12 +4,14 @@
 		<meta charset=utf-8>
 		<title>My first Three.js app</title>
 		<style>
-			body { margin: 0; }
+			body { margin: 0; background: #FFFFFF }
 			canvas { width: 100%; height: 100% }
 		</style>
 	</head>
 	<body bgcolor="#FFFFFF">
     <div id="container"></div>
+
+
 
 		<script src="js/three.js"></script>
     <script src="js/Detector.js"></script>
@@ -23,9 +25,6 @@
     <script src="js/math/Lut.js"></script>
 
     <script type="x-shader/x-vertex" id="vertexShader">
-
-
-
       // switch on high precision floats
       #ifdef GL_ES
       precision highp float;
@@ -166,6 +165,7 @@
 
 
         vec4 mvPosition = modelViewMatrix * vec4((position + normal * displacement), 1.0);
+        //vec4 mvPosition = modelViewMatrix * vec4((position), 1.0);
         float scale =  abs(sin( time * 2.1 ) + cos( time * 3.2 ) + sin( time * 4.3 )); // zhis i found on the 'internet'
         mvPosition.xyz += position * scale;
 
@@ -241,9 +241,107 @@
 
       var ballMesh_1, ballMesh_2, ballMesh_3, ballMesh_4, shaderMaterial_1, parentBall;
 
-      var geometry;
+      var geometry, colorVariant; //shader stuff
 
-      var colorVariant;
+      // here comes the music part!!
+      var context, source, sourceJs;
+      var analyser;
+      var url = 'files/ThereThere.mp3'; //start with Radiohead - There there
+      var array = new Array();
+      var boost = 0;
+
+      var musicCheck = false;;
+
+      //var interval = window.setInterval(function () {
+      //  if ($('#loading_dots').text().length() < 3) {
+      //    $('#loading_dots').text($('#loading_dots').text() + '.');
+      //  }
+      //  else {
+      //    $('#loading_dots').text('');
+      //  }
+      //}, 500); // i have no idea what this is, check later.
+
+      // le MEAT
+      try {
+        if (typeof AudioContext === 'function' || 'AudioContext' in window) {
+          context = new AudioContext();
+        }
+        else {
+          context = new AudioContext();
+        }
+      }
+
+      catch (e) {
+        $('#info').text('Web Audio API is not supported in this browser');
+      }
+
+      var request = new XMLHttpRequest();
+      request.open("GET", url, true);
+      request.responseType = "arraybuffer";
+
+      request.onload = function () {
+        context.decodeAudioData(
+          
+          request.response,
+          function (buffer) {
+            if (!buffer) {
+              $('#info').text('Error decoding file data');
+              return;
+            }
+
+            sourceJs = context.createScriptProcessor(2048, 1, 1);
+            sourceJs.buffer = buffer;
+            sourceJs.connect(context.destination);
+
+            analyser = context.createAnalyser();
+            analyser.smoothingTimeConstant = 0.6; // changable i guess
+            analyser.fftSize = 512; // OMG is this fourier?? 
+
+            source = context.createBufferSource();
+            source.buffer = buffer;
+            source.loop = true; // looopping pooping
+
+            source.connect(analyser);
+            analyser.connect(sourceJs);
+            source.connect(context.destination);
+
+            sourceJs.onaudioprocess = function (e) {
+              array = new Uint8Array(analyser.frequencyBinCount);
+              analyser.getByteFrequencyData(array);
+              boost = 0; // wtf?
+
+              for (var i = 0; i < array.length; i++)
+                boost += array[i];
+
+              boost = boost / array.length;
+            };
+
+            // popup
+            $('body').append($('<div onclick="play();" id="play" style="width: ' + $(window).width() + 'px; height: ' + $(window).height() + 'px;"><div id="play_link"></div></div>'));
+            $('#play_link').css('top', ($(window).height() / 2 - $('#play_link').height() / 2) + 'px');
+            $('#play_link').css('left', ($(window).width() / 2 - $('#play_link').width() / 2) + 'px');
+            $('#play').fadeIn();
+
+          });
+      }
+
+      request.send(); // dunno wtf this does, probably loads it
+
+      function displayTime(time) {
+        if (time < 60) {
+          return '0:' + (time < 10 ? '0' + time : time);
+        }
+        else {
+          var minutes = Math.floor(time / 60);
+          time -= minutes * 60;
+          return minutes + ':' + (time < 10 ? '0' + time : time);
+        }
+      }
+
+      function play() {
+        source.start(0);
+      }
+
 
       init();
       addBalls();
@@ -251,13 +349,14 @@
 
       function init() {
 
-        renderer = new THREE.WebGLRenderer({antialias: true});
+        renderer = new THREE.WebGLRenderer({antialias: true} ,{ alpha: true });
         renderer.setPixelRatio(window.devicePixelRatio);
         renderer.setSize(window.innerWidth / 1.2, window.innerHeight / 1.2);
+        renderer.setClearColor(0xffffff, 0.2);
         document.body.appendChild(renderer.domElement);
 
-        camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 1, 5000);
-        camera.position.set(0, 0, 2000);
+        camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 1, 8000);
+        camera.position.set(1000, 1000, 8000);
 
         scene = new THREE.Scene();
 
@@ -323,10 +422,10 @@
         ballMesh_4 = new THREE.Mesh(geometry_1, shaderMaterial_1);
         ballMesh_4.position.set(0, -250, 0);
 
-        parentBall.add(ballMesh_1);
-        parentBall.add(ballMesh_2);
-        parentBall.add(ballMesh_3);
-        parentBall.add(ballMesh_4);
+        //parentBall.add(ballMesh_1);
+        //parentBall.add(ballMesh_2);
+        //parentBall.add(ballMesh_3);
+        //parentBall.add(ballMesh_4);
 
         // new method, old school stuff - wee
         var num_rows = 10;
@@ -339,9 +438,9 @@
 
           var ballMesh_automated = new THREE.Mesh(geometry_1, shaderMaterial_1);
           ballMesh_automated.position.set(
-             ((x * 400) % (num_rows * 400)),
-             y * 400,
-             Math.random() * num_rows * 400);
+             ((x * 300) % (num_rows * 300)),
+             y * 300,
+             Math.random() * num_rows * 300);
 
           parentBall.add(ballMesh_automated);
 
@@ -350,7 +449,7 @@
 
         scene.add(parentBall);
 
-        exportToObj();
+        //exportToObj();
 
       }
 
@@ -386,9 +485,9 @@
 
         requestAnimationFrame(animate);
 
-        camera.position.x += (mouseX - camera.position.x) * 1;
-        camera.position.y += (-mouseY - camera.position.y) * 1;
-        camera.lookAt(scene.position);
+        //camera.position.x += (mouseX - camera.position.x) * 1;
+        //camera.position.y += (-mouseY - camera.position.y) * 1;
+        //camera.lookAt(scene.position);
 
         light.position.set(camera.position.x, camera.position.y, camera.position.z).normalize();
 
@@ -400,36 +499,44 @@
 
         var time = performance.now() * 0.0002;
 
+        if (performance.now() > 10000) {
+          if (musicCheck != true) {
+            play();
+            musicCheck = true;
+          }
+        }
+
         shaderMaterial_1.uniforms.time.value = time;
 
         //setInterval(addRandomBall(), 100000);
 
-        //parentBall.rotation.x += 0.01;
-        parentBall.rotation.y += 0.01;
+        //parentBall.rotation.x += 0.001;
+        //parentBall.rotation.y += 0.001;
         //parentBall.rotation.z += time * 0.0001;
 
         //camera.rotation.x += 0.5;
         //camera.rotation.y += 0.5;
         //camera.lookAt(scene.position);
 
-        //ballMesh_1.rotation.x += 0.01;
-        //ballMesh_1.rotation.y += 0.01;
-        //ballMesh_1.rotation.z += 0.01;
-        //ballMesh_2.rotation.x += 0.01;
-        //ballMesh_2.rotation.y += 0.01;
-        //ballMesh_2.rotation.z += 0.01;
-        //ballMesh_3.rotation.x += 0.01;
-        //ballMesh_3.rotation.y += 0.01;
-        //ballMesh_3.rotation.z += 0.01;
-        //ballMesh_4.rotation.x += 0.01;
-        //ballMesh_4.rotation.y += 0.01;
-        //ballMesh_4.rotation.z += 0.01;
+        if (typeof array === 'object' && array.length > 0) {
+          var k = 0;
+
+          for (var i = 0; i < 1; i++) {
+            var scale = (array[k] + boost + 5) / 30;    //ahanda degistir bunlari sooo much fun 
+            parentBall.scale.y = (scale < 1 ? 1 : scale);
+            k += (k < array.length ? 1 : 0);
+          }
+        }
 
         renderer.render(scene, camera);
 
       }
 
     </script>
+
+    <div onclick="play();" id="play" style="width: 1304px; height: 342px; display: block;">
+      <div id="play_link" style="top: 139px; left: 620px;"></div>
+    </div>
 
 	</body>
 </html>
