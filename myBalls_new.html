@@ -152,7 +152,7 @@
         mvPosition.xyz += position * scale;
         v_scale = scale;
         
-        intensity = pow(c - dot(vNormal, vNormal_2), p);
+        intensity = pow(c + 0.2 - dot(vNormal, vNormal_2), p);
         gl_Position = projectionMatrix * mvPosition;
       }
     </script>

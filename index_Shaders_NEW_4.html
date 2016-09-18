@@ -1,0 +1,502 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+  <meta charset=utf-8>
+  <title>My first Three.js app</title>
+  <style>
+    body {
+      margin: 0;
+    }
+
+    .info {
+			position: absolute;
+			background-color: black;
+			opacity: 0.7;
+			color: white;
+			text-align: center;
+			top: 0px;
+			width: 100%;
+		}
+
+    .info a {
+			color: #00ffff;
+		}
+
+    canvas {
+      width: 100%;
+      height: 100%;
+    }
+  </style>
+</head>
+<body>
+  <div class="info">
+    <br />
+    <div>WELCOME TO MY BALLS!!</div>
+    <div>
+      <div style="display:inline-block">
+        <span>number of rows:</span>
+        <select id="numRows">
+          <option>100</option>
+          <option>500</option>
+          <option>1000</option>
+          <option>50</option>
+          <option>10</option>
+        </select>
+      </div>
+
+      &nbsp;&nbsp;&nbsp;
+
+      <div style="display:inline-block">
+        <span>select object type:</span>
+        <select id="objectType">
+          <option>Spheres</option>
+          <option>Circles</option>
+          <option>Cones</option>
+        </select>
+      </div>
+
+    </div>
+  </div>
+
+  <div id="container"></div>
+
+  <script src="js/three.js"></script>
+  <script src="js/libs/stats.min.js"></script>
+  <script src="js/controls/TrackballControls.js"></script>
+  <script src="js/libs/dat.gui.min.js"></script>
+
+  <script type="x-shader/x-vertex" id="vertexShader">
+
+    // switch on high precision floats
+    #ifdef GL_ES
+    precision highp float;
+    #endif
+
+    attribute vec3 translate;
+    attribute vec3 color;
+    uniform float time;
+
+    varying vec2 vUv;
+    varying vec3 vertex_normal;
+    varying vec3 vertex_color;
+
+    void main ()
+    {
+      // first, things to be sent to fragmentShader
+      vUv = uv;
+      vertex_normal = normal;
+      vertex_color = color;
+
+      // then, vertexShader related stuff
+      vec3 trTime = vec3(translate.x + time,translate.y + time,translate.z + time);
+      float scale =  sin( trTime.x * 2.1 ) + sin( trTime.y * 3.2 ) + sin( trTime.z * 4.3 ) + 0.0; // zhis i found on the 'internet'
+
+
+      vec4 mvPosition = modelViewMatrix * vec4(translate, 1.0);
+      //vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+      mvPosition.xyz += position * scale;
+      //mvPosition.xyz += position;
+
+
+      gl_Position = projectionMatrix * mvPosition;                                // multiple instanced geometry
+      //gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);   // just one geometry
+    }
+
+  </script>
+
+  <script type="x-shader/x-fragment" id="fragmentShader">
+
+    // switch on high precision floats
+    #ifdef GL_ES
+    precision highp float;
+    #endif
+
+    varying vec2 vUv;
+    varying vec3 vertex_normal;
+    varying vec3 vertex_color;
+
+    uniform float time;
+    uniform sampler2D map;
+
+    // random function in case i need it
+    float rand(vec2 co)
+    {
+      return fract(sin(dot(co.xy ,vec2(12.9898,78.233))) * 43758.5453);
+    }
+
+    // HSL to RGB Convertion helpers
+    vec3 HUEtoRGB(float H){
+      H = mod(H,1.0);
+      float R = abs(H * 6.0 - 3.0) - 1.0;
+      float G = 2.0 - abs(H * 6.0 - 2.0);
+      float B = 2.0 - abs(H * 6.0 - 4.0);
+      return clamp(vec3(R,G,B),0.0,1.0);
+    }
+
+    vec3 HSLtoRGB(vec3 HSL){
+      vec3 RGB = HUEtoRGB(HSL.x);
+      float C = (1.0 - abs(2.0 * HSL.z - 1.0)) * HSL.y;
+      return (RGB - 0.5) * C + HSL.z;
+    }
+
+    void main ()
+    {
+      vec3 light = vec3(0.6, 0.7, 1.0);
+      light = normalize(light);
+      float dot_product_light = max(0.0, dot(vertex_normal, light));
+
+      vec3 fixed_color = vec3(1, 0, 0.2);
+
+      float dot_product_color = max(0.0, dot(vertex_color, vec3(vUv,1.0)));
+
+      float scale =  max((sin(time) + cos (time)), 0.5);  
+
+      vec4 diffuseColor = texture2D( map, vUv );
+
+      //gl_FragColor = vec4(diffuseColor.xyz * vec3(vertex_color * dot_product_light), diffuseColor.w);             //  adding color + light + texture to fake 3d sphere
+      gl_FragColor = vec4(vec3(vertex_color * dot_product_light), 1.0);                   //  adding color + light + color coming from outside
+      //gl_FragColor = vec4(vec3(fixed_color * dot_product_light), 1.0);                    //  adding color + light + fixed color
+      //gl_FragColor = vec4(vec3(vUv * rand(vUv) * dot_product_light, 0.0), 1.0);           //  adding color + light + random noise
+      //gl_FragColor = vec4(vec3(vUv * dot_product_light, 0.0), 1.0);                       //  adding color + light
+      //gl_FragColor = vec4(dot_product_light, dot_product_light, dot_product_light, 1.0);  //  logic for light with black&white;
+      //gl_FragColor = vec4(1.0, 0.0, 1.0, 1.0);                                            //  logic for no shading
+      //gl_FragColor = vec4(vec3(vUv, 0.0), 1.0);                                           // adding color
+    }
+
+  </script>
+
+  <script>
+
+    // Our Javascript will go here.
+    var scene = new THREE.Scene();
+    var camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 10000);
+    var mouse = new THREE.Vector2(), INTERSECTED;
+    var controls, stats, renderer, raycaster, container;
+    var shaderMaterial, instanced_sphere, numberOfRows, instancedGeometry;
+    var objectType;
+
+    init();
+    guiStuff();
+    addObjects();
+    
+    animate();
+
+    function guiStuff()
+    {
+      var numberOfRowsElm = document.getElementById('numRows');
+      numberOfRows = 100;
+
+      numberOfRowsElm.addEventListener("change", function () {
+        numberOfRows = parseInt(numberOfRowsElm.value);
+        scene.remove(instanced_sphere);
+        addObjects();
+      });
+
+      var objectTypeElm = document.getElementById('objectType');
+      objectType = objectTypeElm.value;
+
+      objectTypeElm.addEventListener("change", function () {
+        objectType = objectTypeElm.value;
+        scene.remove(instanced_sphere);
+        addObjects();
+      });
+
+    }
+
+
+    function addObjects()
+    {
+      // set up the sphere vars
+      var radius = 5, segments = 16, rings = 16;
+
+      shaderMaterial = new THREE.ShaderMaterial({
+        uniforms: {
+          map: { value: new THREE.TextureLoader().load("textures/circle.png") },
+          time: { value: 0.0 }
+        },
+        vertexShader: document.getElementById('vertexShader').textContent,
+        fragmentShader: document.getElementById('fragmentShader').textContent,
+
+        transparent: true
+      });
+
+      // multi-instanced geometry logic begins here
+      //instancedGeometry = new THREE.BufferGeometry();
+      instancedGeometry = new THREE.InstancedBufferGeometry();
+
+      if (objectType == "Spheres")
+        instancedGeometry.copy(new THREE.SphereBufferGeometry(radius, segments, rings));
+      else if (objectType == "Circles")
+        instancedGeometry.copy(new THREE.CircleBufferGeometry(1, 15));
+      else
+        instancedGeometry.copy(new THREE.ConeBufferGeometry(radius, 10, segments, rings));
+
+      //var controls_gui = new function () {
+      //  this.numberOfRows = 2;
+      //};
+      //var gui = new dat.GUI();
+      //gui.add(controls_gui, 'numberOfRows', 2, 1000).min(2).step(10);
+
+      var num_rows = numberOfRows;
+      var num_points = num_rows * num_rows;
+      var x = 0;
+      var y = 0;
+
+      //instancedGeometry.attributes = {
+      //    position: {
+      //        itemSize: 3,
+      //        array: new Float32Array(num_points * 3),
+      //        numItems: num_points * 3
+      //    }
+      //}
+
+      //var positions_temp = instancedGeometry.attributes.position.array;
+
+
+      // set positions
+      var translate_array_for_instancing = new Float32Array(num_points * 3); //for x,y,z
+
+      for (var i = 0, i3 = 0, l = num_points; i < l; i++, i3 += 3) {
+
+        if (i % num_rows == 0 && x != 0)
+          y++;
+
+        translate_array_for_instancing[i3 + 0] = ((x * 100) % (num_rows * 10));
+        translate_array_for_instancing[i3 + 1] = y * 10;
+        translate_array_for_instancing[i3 + 2] = Math.random() * num_rows;
+
+        x++;
+      }
+
+
+
+      //instancedGeometry.addAttribute("position", new THREE.BufferAttribute(translate_array_for_instancing, 3));
+      instancedGeometry.addAttribute("translate", new THREE.InstancedBufferAttribute(translate_array_for_instancing, 3, 1));
+      //instancedGeometry.addAttribute("position", new THREE.InstancedBufferAttribute(translate_array_for_instancing_temp, 3, 1));
+
+      var temp_positions = instancedGeometry.attributes.position;
+
+      // set colors
+      var color_array_for_instancing = new Float32Array(num_points * 3); //for r,g,b
+      for (var i = 0, i3 = 0, l = num_points; i < l; i++, i3 += 3) {
+        color_array_for_instancing[i3 + 0] = Math.random();
+        color_array_for_instancing[i3 + 1] = Math.random();
+        color_array_for_instancing[i3 + 2] = Math.random();
+      }
+
+      //instancedGeometry.addAttribute('color', new THREE.BufferAttribute(translate_array_for_instancing, 3));
+      instancedGeometry.addAttribute("color", new THREE.InstancedBufferAttribute(color_array_for_instancing, 3, 1));
+
+      instanced_sphere = new THREE.Mesh(instancedGeometry, shaderMaterial);
+      instanced_sphere.scale.set(1, 1, 1);
+      instanced_sphere.frustumCulled = false;
+      scene.add(instanced_sphere);
+
+    }
+
+    function addSeismicBox()
+    {
+
+    }
+
+    function init()
+    {
+      container = document.getElementById("container");
+
+      raycaster = new THREE.Raycaster();
+      renderer = new THREE.WebGLRenderer();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      container.appendChild(renderer.domElement);
+      stats = new Stats();
+      container.appendChild(stats.dom);
+      renderer.domElement.addEventListener('mousemove', onmousemove, false);
+      window.addEventListener('resize', onWindowResize, false);
+
+      // add controls to the screen
+      controls = new THREE.TrackballControls(camera, renderer.domElement);
+      controls.rotateSpeed = 20.0;
+      controls.zoomSpeed = 1.2;
+      controls.rotateCamera();
+
+      controls.panSpeed = 0.8;
+      controls.noZoom = false;
+      controls.noPan = false;
+      controls.staticMoving = true;
+
+      controls.dynamicDampingFactor = 0.5;
+      controls.keys = [65, 83, 68];
+      controls.addEventListener('change', render);
+      // end of controls
+
+
+      //var bbox = new THREE.Box3().setFromObject(instanced_sphere);
+
+      camera.position.z = 3000;
+      //camera.lookAt(bbox.center());
+
+      //var distance = bbox.distanceToPoint(camera.position);
+      ////var dist = height / 2 / Math.tan(Math.PI * camera.fov / 360);
+
+      //var from_cam_to_bbox = camera.position - bbox.center;
+
+      //var bbox_center = new THREE.Vector3(((bbox.max.x + bbox.min.x) / 2), ((bbox.max.y + bbox.min.y) / 2), ((bbox.max.z + bbox.min.z) / 2));
+
+      //camera.position.x = bbox_center.x;
+      //camera.position.y = bbox.max.y;
+
+      // adding annotations, trial 1
+      // create a canvas element
+      var canvas1 = document.createElement('canvas');
+      var context1 = canvas1.getContext('2d');
+      context1.font = "Bold 40px Arial";
+      context1.fillStyle = "rgba(255,0,0,0.95)";
+      context1.fillText('Hello, world!', 0, 30);
+
+      // canvas contents will be used for a texture
+      var texture1 = new THREE.Texture(canvas1)
+      texture1.needsUpdate = true;
+
+      var material1 = new THREE.MeshBasicMaterial({ map: texture1, side: THREE.DoubleSide });
+      material1.transparent = true;
+
+    }
+
+    function addText()
+    {
+      // text stuff
+      var mesh1 = new THREE.Mesh(
+          new THREE.PlaneGeometry(canvas1.width, canvas1.height),
+          material1
+        );
+      mesh1.position.set(0, 50, 0);
+      scene.add(mesh1);
+
+      var parent_text = new THREE.Object3D();
+
+      for (var i = 0, i3 = 0, l = num_points; i < l; i++, i3 += 3) {
+        var text_mesh_object = new THREE.Mesh(
+          new THREE.PlaneGeometry(canvas1.width, canvas1.height),
+          material1
+        );
+        //text_mesh_object.position.set(translate_array_for_instancing[i3], translate_array_for_instancing[i3 + 1])
+
+        parent_text.add(text_mesh_object);
+      }
+    }
+
+    function toXYCoords(pos) {
+      var vector = projector.projectVector(pos.clone(), camera);
+      vector.x = (vector.x + 1) / 2 * window.innerWidth;
+      vector.y = -(vector.y - 1) / 2 * window.innerHeight;
+      return vector;
+    }
+
+    function pick() {
+      // render the picking scene off-screen
+      //highlightBox.visible = false;
+
+      if (singlePickingMaterial)
+      {
+        scene.overrideMaterial = singlePickingMaterial;
+        renderer.render(scene, camera, pickingRenderTarget);
+        scene.overrideMaterial = null;
+      }
+      else
+      {
+        renderer.render(pickingScene, camera, pickingRenderTarget);
+      }
+
+      // read the pixel under the mouse from the texture
+      renderer.readRenderTargetPixels(
+				pickingRenderTarget,
+				mouse.x,
+				pickingRenderTarget.height - mouse.y,
+				1,
+				1,
+				pixelBuffer
+			);
+      // interpret the pixel as an ID
+      var id =
+				(pixelBuffer[0] << 16) |
+				(pixelBuffer[1] << 8) |
+				(pixelBuffer[2]);
+
+      var object = pickingData[id];
+
+      if (object) {
+        // move the highlightBox so that it surrounds the picked object
+        //if (object.position && object.rotation && object.scale) {
+        //  highlightBox.position.copy(object.position);
+        //  highlightBox.rotation.copy(object.rotation);
+        //  highlightBox.scale.copy(object.scale)
+		//				.multiply(geometrySize)
+		//				.multiplyScalar(scale);
+        //  highlightBox.visible = true;
+        //}
+      }
+      else {
+        //highlightBox.visible = false;
+      }
+    }
+
+
+    function onWindowResize()
+    {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+
+    function onDocumentMouseMove(event)
+    {
+      event.preventDefault();
+      mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+      mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+    }
+
+    function animate()
+    {
+      requestAnimationFrame(animate);
+      render();
+      stats.update();
+      controls.update();
+    }
+
+    function render()
+    {
+      // intersection - picking - bu yollan olmeaz mi?
+      //raycaster.setFromCamera( mouse, camera );
+      //var intersects = raycaster.intersectObjects( scene.children );
+      //if ( intersects.length > 0 ) {
+      //  if ( INTERSECTED != intersects[ 0 ].object ) {
+      //    if (INTERSECTED)
+      //      INTERSECTED.material.emissive.setHex(INTERSECTED.currentHex);
+
+      //    INTERSECTED = intersects[0].object;
+      //  	INTERSECTED.currentHex = INTERSECTED.material.emissive.getHex();
+      //  	INTERSECTED.material.emissive.setHex( 0xffd700 );
+      //  }
+      //}
+      //else {
+      //  if (INTERSECTED)
+      //    INTERSECTED.material.emissive.setHex(INTERSECTED.currentHex);
+
+      //  INTERSECTED = null;
+      //}
+
+      var time = performance.now() * 0.0005;
+      shaderMaterial.uniforms.time.value = time;
+
+      var interval = 0.1;
+      //instanced_sphere.rotation.x += 0.1;
+      //instanced_sphere.rotation.y += 0.001;
+
+      renderer.render(scene, camera);
+    }
+
+    render();
+
+  </script>
+</body>
+</html>

@@ -1,0 +1,369 @@
+﻿<!DOCTYPE html>
+<html>
+	<head>
+		<meta charset=utf-8>
+		<title>New ideas in ThreeJS - Base</title>
+		<style>
+			body { margin: 0; overflow: hidden; }
+			canvas { width: 100%; height: 100% }
+		</style>
+	</head>
+  
+	<body>
+		<script src="js/three.js"></script>
+    <script src="js/controls/OrbitControls.js"></script>
+    <script src="js/loaders/OBJLoader.js"></script>
+    <script src="js/loaders/BinaryLoader.js"></script>
+  
+    
+    <script type="x-shader/x-vertex" id="vertexShader">
+      #ifdef GL_ES
+      precision highp float;
+      #endif
+      
+      uniform float time;
+      
+      varying vec2 vUv;
+      varying vec3 vNormal;
+      varying vec3 vPosition;
+
+      varying float scaledTime;
+      
+      //Fresnel stuff
+      varying vec3 vPositionW;
+      varying vec3 vNormalW;
+
+      //Environmental map stuff
+      varying vec2 vN;
+      
+      void main(){
+      
+        vUv = uv;
+
+        vec3 vertex = position;
+        //vertex.x += sin (2.0 + position.y + (time)) * 1.9;
+        //vertex.y += cos (2.0 + position.y + (time)) * 1.2;
+        //vertex.x += sin (2.0 + position.y + (time)) * 0.01 * cos (10.0 + position.y + (time)) * 0.9;
+        vertex.y += cos (2.0 + position.y + (time)) * 1.2 + (sin(time) + cos(time)) * 1.5;
+        vertex.z += cos (2.0 + position.y + (time)) * 0.2 + sin(time) * 0.0;
+
+        vec4 p = vec4(vertex, 1.0);
+        vec3 e = normalize(vec3(modelViewMatrix * p));
+        vec3 n = normalize(normalMatrix * normal);
+
+        vec3 r = reflect(e,n);
+        float m = 2.0 * sqrt(pow(r.x, 2.0) + pow(r.y, 2.0) + pow(r.z + 1.0, 2.0));
+
+        vN = r.xy / m + 0.5;
+        
+        vec4 mvPosition = modelViewMatrix * p;
+        //vec4 mvPosition = modelViewMatrix * vec4(vertex, 1.0);
+
+        vPosition = position;
+        vNormal = normal;
+        
+        //Fresnel ziki
+        //vec4 outPosition = worldViewProjection * vec4(position, 1.0);
+        vPositionW = vec3(modelMatrix * vec4(position, 1.0));
+        vNormalW = normalize(vec3(modelMatrix * vec4(normal, 0.0)));
+
+        //vec4 mvPosition = modelViewMatrix * vec4(position, 1.0); //old logic
+          
+        gl_Position = projectionMatrix * mvPosition;
+
+        scaledTime =  sin( time )+ 1.5; // zhis i found on the 'internet'
+        
+      }
+        
+    </script>
+
+	<script type="x-shader/x-vertex" id="vertexShader_2">
+      #ifdef GL_ES
+      precision highp float;
+      #endif
+
+      uniform float time;
+
+      varying vec2 vUv;
+      varying vec3 vNormal;
+      varying vec3 vPosition;
+
+      varying float scaledTime;
+
+      //Fresnel stuff
+      varying vec3 vPositionW;
+      varying vec3 vNormalW;
+
+      //Environmental map stuff
+      varying vec2 vN;
+
+      void main(){
+        vUv = uv;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+
+    </script>
+
+	<script type="x-shader/x-fragment" id="fragmentShader">
+    
+      #ifdef GL_ES
+      precision highp float;
+      #endif
+
+      uniform sampler2D tMatCap; //bu dosyadan gelcek
+      
+      varying vec2 vUv;
+      //Fresnel stuff
+      varying vec3 vPositionW;
+      varying vec3 vNormalW;
+
+      //Environmental map stuff
+      varying vec2 vN;
+
+      varying float scaledTime;
+      
+      void main(){
+
+        vec3 viewDirectionW = normalize(cameraPosition - vPositionW);
+
+
+        vec3 vLightPosition_1 = vec3(50, 90, -90);
+        vec3 lightVectorW_1 = normalize(vLightPosition_1 - vPositionW);
+
+        vec3 vLightPosition_2 = vec3(-40, 90, 90);
+        vec3 vLightPosition_2_moving = vec3(vLightPosition_2.x * scaledTime, vLightPosition_2.y * scaledTime, vLightPosition_2.z * scaledTime);
+        vec3 lightVectorW_2 = normalize(vLightPosition_2 - vPositionW);
+
+        vec3 color = vec3(1.0, 0.0, 1.0); //make this an input later on
+
+        //calculate diffuse light
+        float diffuseLight = max(0.0, dot(vNormalW, lightVectorW_1)) + 0.2;
+
+        //calculate specular light
+        vec3 angleW = normalize(viewDirectionW + lightVectorW_1);
+        float specularComponent = max(0.0, dot(vNormalW, angleW));
+        specularComponent = pow(specularComponent, max(1.0, 64.0)) * 0.8;
+
+        //finally Fresnel
+        float fresnelTerm = dot(viewDirectionW, vNormalW);
+        fresnelTerm = clamp(1.0 - fresnelTerm, 0.0, 1.0) * 0.0 + 1.0;
+      
+        vec3 base = texture2D(tMatCap, vN).rgb;  
+
+        //some cool Colorify Shader --http://threejs.org/examples/js/shaders/ColorifyShader.js
+        vec3 luma = vec3(0.9, 0.587, 0.114);
+        float v = dot(base.xyz, luma);
+
+        
+
+        //gl_FragColor = vec4(base * fresnelTerm * diffuseLight + vec3(specularComponent), 1.0);
+        gl_FragColor = vec4(base * v * fresnelTerm * diffuseLight + vec3(specularComponent), 0.5);
+        //gl_FragColor = vec4(vec3(vUv, 0.0), 1.0);
+        //gl_FragColor = vec4(vec3(vUv, 0.0) * fresnelTerm * diffuseLight + vec3(specularComponent), 1.0);
+      
+      }
+    
+    </script>
+
+	<script type="x-shader/x-fragment" id="dotScreenShader">
+
+    #ifdef GL_ES
+    precision highp float;
+    #endif
+    //taken from http://threejs.org/examples/js/shaders/DotScreenShader.js
+
+    uniform sampler2D tMatCap; //bu dosyadan gelcek
+
+    varying vec2 vUv;
+      
+    uniform vec2 center;
+    uniform float angle;
+    uniform float scale;
+    uniform vec2 tSize;
+    
+    float pattern() {
+			float s = sin( angle );
+			float c = cos( angle );
+
+			float newScale = sin(scale * 2.1) + cos(scale * 3.2) + sin(scale * 4.3);
+
+			vec2 tex = vUv * tSize - center;
+			vec2 point = vec2( c * tex.x - s * tex.y, s * tex.x + c * tex.y ) * newScale;
+
+			return ( sin( point.x ) * sin( point.y ) ) * 4.0;
+		}
+		
+		void main(){
+			vec4 color = texture2D(tMatCap, vUv);
+			float average = (color.r + color.g + color.b) / 3.0;
+
+			float newColor = abs(sin(scale * 2.1) + cos(scale * 3.2) + sin(scale * 4.3));
+			
+			gl_FragColor = vec4(vec3(average * 10.0 - 5.0 + pattern(), newColor, newColor), 0.4);
+    }
+
+  </script>
+
+	<script>
+			// Our Javascript will go here.
+      var scene = new THREE.Scene();
+      var camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+      var controls; // controls stuff
+
+      var renderer = new THREE.WebGLRenderer({ antialias: true }, { alpha: true });
+      renderer.setClearColor(0xffffff, 0.7);
+			renderer.setSize( window.innerWidth, window.innerHeight );
+			document.body.appendChild( renderer.domElement );
+      
+      
+      var sphereGeometry = new THREE.SphereGeometry( 30, 165, 165 );
+      var cubeGeometry = new THREE.BoxGeometry( 10, 10, 10, 65, 65 );
+      
+      var material = new THREE.MeshBasicMaterial( { color: 0x00ff00 } );
+      var shaderMaterial = new THREE.ShaderMaterial ({
+        uniforms: {
+          time: { value: 0.1 },
+          tMatCap: {
+            type: 't',
+            value: THREE.ImageUtils.loadTexture('files/blood.jpg')
+          },
+        },
+        vertexShader: document.getElementById('vertexShader').textContent,
+        fragmentShader: document.getElementById('fragmentShader').textContent,
+        side: THREE.FrontSide,
+        blending: THREE.MultiplyBlending, //this could be changed
+      });
+
+      var shaderMaterial_ScreenShader = new THREE.ShaderMaterial({
+        uniforms: {
+          time: { value: 0.1 },
+          tMatCap: {
+            type: 't',
+            value: THREE.ImageUtils.loadTexture('files/hamster.jpg')
+          },
+          tSize: { value: new THREE.Vector2(256, 256) },
+          center: { value: new THREE.Vector2(0.5, 0.5) },
+          angle: { value: 1.57 },
+					scale: {value: 1.0}
+        },
+        vertexShader: document.getElementById('vertexShader_2').textContent,
+        fragmentShader: document.getElementById('dotScreenShader').textContent,
+        side: THREE.FrontSide,
+        blending: THREE.MultiplyBlending, //this could be changed
+        transparent: true
+      });
+
+      //var materialSphere = new THREE.MeshLambertMaterial(color = "#ff0000");
+      
+      var sphere = new THREE.Mesh(sphereGeometry, shaderMaterial);
+      sphere.geometry.dynamic = true;
+      //scene.add(sphere);
+
+      var newMaterial = new THREE.MeshPhongMaterial({ color: "#ff0000", transparent: true, opacity: 0.2 });
+      var cube = new THREE.Mesh(cubeGeometry, shaderMaterial_ScreenShader);
+      cube.geometry.dynamic = true;
+      cube.position.x = 0;
+      cube.position.y = 2;
+      cube.position.z = 1;
+      scene.add(cube);
+
+      var manager = new THREE.LoadingManager();
+      manager.onProgress = function (item, loaded, total) {
+
+        console.log(item, loaded, total);
+
+      };
+
+      var texture = new THREE.Texture();
+
+      var onProgress = function (xhr) {
+        if (xhr.lengthComputable) {
+          var percentComplete = xhr.loaded / xhr.total * 100;
+          console.log(Math.round(percentComplete, 2) + '% downloaded');
+        }
+      };
+
+      var onError = function (xhr) {
+      };
+
+      var parentObject = new THREE.Object3D();
+
+      var loader = new THREE.ObjectLoader(manager);
+      loader.load('files/skull.json',
+        function (object) {
+        	object.traverse(function (child) {
+        		if (child instanceof THREE.Mesh) {
+        			child.material = shaderMaterial;
+        		}
+        	});
+        	parentObject.add(object);
+        	scene.add(object);
+        },
+        onProgress, onError);
+
+      camera.position.x = 16;
+      camera.position.y = 13;
+      camera.position.z = 13;
+
+      // add controls to the screen
+      controls = new THREE.OrbitControls(camera, renderer.domElement);
+      controls.rotateSpeed = 1.5;
+      controls.autoRotate = true;
+      controls.autoRotateSpeed = 2.5;
+      //controls.zoomSpeed = 1.2;
+      //controls.panSpeed = 0.8;
+      //controls.noZoom = false;
+      //controls.noPan = false;
+      //controls.staticMoving = true;
+      //controls.dynamicDampingFactor = 0.5;
+      //controls.keys = [65, 83, 68];
+      controls.addEventListener('change', render);
+
+      for (var i = 0; i < 7; i++) {
+        controls.enablePan = new THREE.Vector3(1, 0, 0);
+        controls.enablePan = new THREE.Vector3(0, 1, 0);
+      }
+
+      var clock = new THREE.Clock;
+
+      animate();
+
+      function animate() {
+        requestAnimationFrame(animate);
+        render();
+        controls.update();
+      }
+
+      function render() {
+
+        var time = performance.now() * 0.005;
+        shaderMaterial.uniforms.time.value = time;
+      	//shaderMaterial_2.uniforms.time.value = time;
+
+
+        time = time / 20;
+
+        shaderMaterial_ScreenShader.uniforms.angle.value = time;
+        shaderMaterial_ScreenShader.uniforms.scale.value = time/10;
+
+
+        var scaledTime = Math.sin(time) + 1.5; // zhis i found on the 'internet'
+        var scaledTime_new = Math.sin(time * 2.1) + Math.cos(time * 3.2) + Math.sin(time * 4.3);
+        //cube.scale.z = scaledTime_new;
+
+        //camera.rotation.x += clock.getDelta();
+        //camera.rotation.y += clock.getDelta();
+
+        //cube.rotation.x += clock.getDelta() * 1.1;
+      	//cube.rotation.y += clock.getDelta() * 1.1;
+
+      	//parentObject.rotation.x += clock.getDelta() * 5.1;
+      	//parentObject.rotation.y += clock.getDelta() * 5.1;
+
+        renderer.render(scene, camera);
+      }
+      
+      
+		</script>
+	</body>
+</html>

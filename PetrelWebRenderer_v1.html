@@ -1,0 +1,271 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+  <meta charset=utf-8>
+  <title>My first Three.js app</title>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+    }
+
+    .info {
+			position: absolute;
+			background-color: black;
+			opacity: 0.7;
+			color: white;
+			text-align: center;
+			top: 0px;
+			width: 100%;
+		}
+
+    .info a {
+			color: #00ffff;
+		}
+
+    canvas {
+      width: 100%;
+      height: 100%;
+    }
+  </style>
+</head>
+<body>
+  <div class="info">
+    <br />
+    <div>YO - v1</div>
+  </div>
+
+  <div id="container"></div>
+
+  <script src="js/three.js"></script>
+  <script src="js/libs/stats.min.js"></script>
+  <script src="js/controls/TrackballControls.js"></script>
+  <script src="js/libs/dat.gui.min.js"></script>
+  <script src="js/math/Lut.js"></script>
+  <script src="js/exporters/OBJExporter.js"></script>
+
+  <script src="js/jquery-1.10.2.min.js"></script>
+
+  <script type="x-shader/x-vertex" id="vertexShader">
+
+    // switch on high precision floats
+    #ifdef GL_ES
+    precision highp float;
+    #endif
+
+    attribute vec3 translate;
+    attribute vec3 color;
+
+    uniform float time;
+    uniform float point_size;
+
+    varying vec2 vUv;
+    varying vec3 vertex_normal;
+    varying vec3 vertex_color;
+
+    void main ()
+    {
+      // first, things to be sent to fragmentShader
+      vUv = uv;
+      vertex_normal = normal;
+      vertex_color = color;
+
+      // then, vertexShader related stuff
+      //scale = point_size;  //just for the sake of simplicity
+
+      //vec4 mvPosition = modelViewMatrix * vec4(translate, 1.0);
+      vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+      //mvPosition.xyz += position * scale;
+      //mvPosition.xyz += position;
+
+      gl_Position = projectionMatrix * mvPosition;                                // multiple instanced geometry
+    }
+
+  </script>
+
+  <script type="x-shader/x-fragment" id="fragmentShader">
+
+    // switch on high precision floats
+    #ifdef GL_ES
+    precision highp float;
+    #endif
+
+    varying vec2 vUv;
+    varying vec3 vertex_normal;
+    varying vec3 vertex_color;
+
+    uniform float time;
+
+    void main ()
+    {
+      vec3 light = vec3(0.6, 0.7, 1.0);
+      light = normalize(light);
+      float dot_product_light = max(0.0, dot(vertex_normal, light));
+
+      vec3 fixed_color = vec3(1, 0, 0.2);
+
+      float scale =  max((sin(time) + cos (time)), 0.5);  
+
+      //gl_FragColor = vec4(diffuseColor.xyz * vec3(vertex_color * dot_product_light), diffuseColor.w);             //  adding color + light + texture to fake 3d sphere
+      //gl_FragColor = vec4(vec3(vertex_color * dot_product_light), 1.0);                   //  adding color + light + color coming from outside
+      //gl_FragColor = vec4(vec3(fixed_color * dot_product_light), 1.0);                    //  adding color + light + fixed color
+      //gl_FragColor = vec4(vec3(vUv * dot_product_light, 0.0), 1.0);                       //  adding color + light
+      //gl_FragColor = vec4(1.0, 0.0, 1.0, 1.0);                                            //  logic for no shading
+      gl_FragColor = vec4(vec3(vUv, 0.0), 1.0);                                           // adding color
+    }
+
+  </script>
+
+  <script>
+    var scene = new THREE.Scene();
+    var camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 10000);
+    var mouse = new THREE.Vector2(), INTERSECTED;
+    var controls, stats, renderer, raycaster, container;
+    var shaderMaterial, instanced_sphere, numberOfRows, instancedGeometry, pointSize, pointColor;
+    var objectType;
+
+    var numberOfPoints;
+    var pointsArray = [[]];
+
+    var colorMap, numberOfColors, legendLayout, lut;
+
+    $(document).ready(function () {
+      jQuery.getJSON('files/pointsFromPetrel.json', function (pointData) {
+        console.log("json data that i see: " + pointData.data.vertices.Size);
+        //numberOfPoints = pointData.data.vertices.Size;
+        numberOfPoints = 300;
+
+        for (var i = 0 ; i < numberOfPoints * 3 ; i++) {
+          pointsArray.push(pointData.data.vertices.double[i]);
+        }
+
+        init();
+        addPoints();
+        animate();
+
+      });
+    });
+
+    function addObjects(data)
+    {
+      // set up the sphere variables
+      var radius = 5, segments = 16, rings = 16;
+
+      shaderMaterial = new THREE.ShaderMaterial({
+        uniforms: {
+          time: { value: 0.0 },
+          point_size: {value: 1.0}
+        },
+        vertexShader: document.getElementById('vertexShader').textContent,
+        fragmentShader: document.getElementById('fragmentShader').textContent,
+
+        transparent: true
+      });
+    }
+
+    function addPoints() {
+      var pointShaderMaterial = new THREE.ShaderMaterial({
+        uniforms: {
+          time: { value: 0.0 },
+          point_size: { value: 1.0 }
+        },
+        vertexShader: document.getElementById('vertexShader').textContent,
+        fragmentShader: document.getElementById('fragmentShader').textContent,
+
+        transparent: true
+      });
+
+
+
+      var parentPointObject = new THREE.Object3D();
+      for (var i = 0, i3 = 0; i < numberOfPoints; i++, i3 +=3) {
+        var pointGeometry = new THREE.SphereGeometry(5, 35, 35);
+        var pointMesh = new THREE.Mesh(pointGeometry, pointShaderMaterial);
+
+        pointMesh.position.x = pointsArray[i3];
+        pointMesh.position.y = pointsArray[i3 + 1];
+        pointMesh.position.z = pointsArray[i3 + 2];
+
+        parentPointObject.add(pointMesh);
+      }
+
+      scene.add(parentPointObject);
+
+      camera.position.z = 1000;
+
+    }
+
+
+    function init()
+    {
+      container = document.getElementById("container");
+
+      raycaster = new THREE.Raycaster();
+      renderer = new THREE.WebGLRenderer({antialias: true});
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      container.appendChild(renderer.domElement);
+      stats = new Stats();
+      container.appendChild(stats.dom);
+      renderer.domElement.addEventListener('mousemove', onmousemove, false);
+      window.addEventListener('resize', onWindowResize, false);
+
+      // add controls to the screen
+      controls = new THREE.TrackballControls(camera, renderer.domElement);
+      controls.rotateSpeed = 20.0;
+      controls.zoomSpeed = 1.2;
+      controls.rotateCamera();
+
+      controls.panSpeed = 0.8;
+      controls.noZoom = false;
+      controls.noPan = false;
+      controls.staticMoving = true;
+
+      controls.dynamicDampingFactor = 0.5;
+      controls.keys = [65, 83, 68];
+      controls.addEventListener('change', render);
+      // end of controls
+    }
+
+
+
+    function toXYCoords(pos) {
+      var vector = projector.projectVector(pos.clone(), camera);
+      vector.x = (vector.x + 1) / 2 * window.innerWidth;
+      vector.y = -(vector.y - 1) / 2 * window.innerHeight;
+      return vector;
+    }
+
+
+    function onWindowResize()
+    {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+
+    function onDocumentMouseMove(event)
+    {
+      event.preventDefault();
+      mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+      mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+    }
+
+    function animate()
+    {
+      requestAnimationFrame(animate);
+      render();
+      stats.update();
+      controls.update();
+    }
+
+    function render()
+    {
+      renderer.render(scene, camera);
+    }
+
+    render();
+
+  </script>
+</body>
+</html>

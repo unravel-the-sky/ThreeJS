@@ -4108,9 +4108,9 @@ THREE.Box3.prototype = {
 
 						}
 
-					} else if ( geometry instanceof THREE.BufferGeometry && geometry.attributes[ 'position' ] !== undefined ) {
+					} else if ( geometry instanceof THREE.BufferGeometry && geometry.attributes[ 'translate' ] !== undefined ) {
 
-						var positions = geometry.attributes[ 'position' ].array;
+						var positions = geometry.attributes[ 'translate' ].array;
 
 						for ( var i = 0, il = positions.length; i < il; i += 3 ) {
 

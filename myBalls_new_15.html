@@ -1,0 +1,848 @@
+﻿<!DOCTYPE html>
+<html>
+	<head>
+		<meta charset=utf-8>
+		<title>Music Visualizer Experiment</title>
+		<style>
+			body { 
+        margin: 0; 
+        background: #FFFFFF;
+        background: -moz-radial-gradient(center, circle cover,  #ffffff 10%, #e5e5e5 100%); /* FF3.6+ */
+	      background: -webkit-gradient(radial, center center, 0px, center center, 100%, color-stop(10%,#ffffff), color-stop(100%,#e5e5e5)); /* Chrome,Safari4+ */
+	      background: -webkit-radial-gradient(center, circle cover,  #ffffff 10%,#e5e5e5 100%); /* Chrome10+,Safari5.1+ */
+	      background: -o-radial-gradient(center, circle cover,  #ffffff 10%,#e5e5e5 100%); /* Opera 12+ */
+	      background: -ms-radial-gradient(center, circle cover,  #ffffff 10%,#e5e5e5 100%); /* IE10+ */
+	      background: radial-gradient(circle at center,  #ffffff 10%,#e5e5e5 100%); /* W3C */
+	      cursor: default;
+	      overflow: hidden;
+	      /*color: #000;*/
+	      font-size: 1.4em;
+	      font-weight: 300;
+	      font-family: 'Montserrat', sans-serif;
+	      text-shadow: 0px 0px 2px #333;
+			}
+			canvas { width: 100%; height: 100% }
+      canvas {display: block; overflow: hidden }
+
+      #play {
+	      position: fixed;
+	      top: 0;
+	      left: 0;
+	      background-color: rgba(0, 0, 0, 0.6);
+	      display: none;
+      }
+
+      #play_link {
+	      position: absolute;
+	      top: 0;
+	      left: 0;
+	      height: 100px;
+	      width: 100px;
+	      background: url('files/play.png') left center no-repeat transparent;
+	      cursor: pointer;
+      }
+
+      #info {
+        background:#ffffff; /* Chrome10+,Safari5.1+ */
+        width: 100%;
+	      position: absolute;
+	      top: 0;
+	      left: 0;
+	      padding: 5px;
+        font-size: 16px;
+        text-shadow: none;
+      }
+
+      #credits{
+        /*background:-webkit-radial-gradient(center, circle cover,  #ffffff 10%,#e5e5e5 100%);*/ /* Chrome10+,Safari5.1+ */
+        width: 100%;
+	      position: absolute;
+	      bottom: 0;
+	      left: 0;
+	      padding: inherit;
+        text-align: right;
+      }
+
+      #songName{
+        width: 100%;
+	      position: absolute;
+	      top: 0;
+	      right: 0;
+	      padding: 0px 4px 0px 0px;
+        text-align: right;
+      }
+
+      /*#info div {
+	      padding: 0 5px;
+	      display: inline-block;
+      }*/
+		</style>
+
+    <link href="https://fonts.googleapis.com/css?family=Montserrat" rel="stylesheet">
+	</head>
+	<body bgcolor="#FFFFFF">
+    
+    <div id="info">Loading song <span id="loading_stuff"></span></div>
+    <div id="credits">a visual experiment by Sadan Ekdemir </div>
+    <div id="songName">
+      <select id="selectSong">
+        <option>Radiohead - There, there</option>
+        <option>Katatonia - The Parting</option>
+        <option>Hamferd - Deyðir varðar</option>
+        <option>Opeth - Cusp of Eternity</option>
+      </select>
+    </div>
+    
+    <!--<div id="container"></div>-->
+
+		<script src="js/three.js"></script>
+    <script src="js/Detector.js"></script>
+    <script src="js/libs/stats.min.js"></script>
+    <script src="js/controls/OrbitControls.js"></script>
+    <script src="js/libs/dat.gui.min.js"></script>
+    <script src="js/loaders/BinaryLoader.js"></script>
+    <script src="js/controls/TrackballControls.js"></script>
+
+    <script src="http://connect.soundcloud.com/sdk.js"></script>
+
+    <script src="js/jquery-1.10.2.min.js"></script>
+
+    <!--wow physics and stuff-->
+    <script src="js/physi.js"></script>
+
+    <script src="js/math/Lut.js"></script>
+
+    <script type="x-shader/x-vertex" id="vertexShader">
+      // switch on high precision floats
+      #ifdef GL_ES
+      precision highp float;
+      #endif
+
+      uniform vec3 viewingVector;
+      uniform float c;
+      uniform float p;
+      uniform float time;
+      uniform float intensity_displacement;
+
+      // same name and type as VS
+      varying vec3 vNormal;
+      varying vec2 vUv;
+      varying float noise;
+      varying vec3 vPos;
+      
+      varying float intensity;
+      varying float v_scale;
+      vec3 mod289(vec3 x)
+      {
+        return x - floor(x * (1.0 / 289.0)) * 289.0;
+      }
+      vec4 mod289(vec4 x)
+      {
+        return x - floor(x * (1.0 / 289.0)) * 289.0;
+      }
+      vec4 permute(vec4 x)
+      {
+        return mod289(((x*34.0)+1.0)*x);
+      }
+      vec4 taylorInvSqrt(vec4 r)
+      {
+        return 1.79284291400159 - 0.85373472095314 * r;
+      }
+      vec3 fade(vec3 t) {
+        return t*t*t*(t*(t*6.0-15.0)+10.0);
+      }
+      // Classic Perlin noise, periodic variant
+      float pnoise(vec3 P, vec3 rep){
+        vec3 Pi0 = mod(floor(P), rep); // Integer part, modulo period
+        vec3 Pi1 = mod(Pi0 + vec3(1.0), rep); // Integer part + 1, mod period
+        Pi0 = mod289(Pi0);
+        Pi1 = mod289(Pi1);
+        vec3 Pf0 = fract(P); // Fractional part for interpolation
+        vec3 Pf1 = Pf0 - vec3(1.0); // Fractional part - 1.0
+        vec4 ix = vec4(Pi0.x, Pi1.x, Pi0.x, Pi1.x);
+        vec4 iy = vec4(Pi0.yy, Pi1.yy);
+        vec4 iz0 = Pi0.zzzz;
+        vec4 iz1 = Pi1.zzzz;
+        vec4 ixy = permute(permute(ix) + iy);
+        vec4 ixy0 = permute(ixy + iz0);
+        vec4 ixy1 = permute(ixy + iz1);
+        vec4 gx0 = ixy0 * (1.0 / 7.0);
+        vec4 gy0 = fract(floor(gx0) * (1.0 / 7.0)) - 0.5;
+        gx0 = fract(gx0);
+        vec4 gz0 = vec4(0.5) - abs(gx0) - abs(gy0);
+        vec4 sz0 = step(gz0, vec4(0.0));
+        gx0 -= sz0 * (step(0.0, gx0) - 0.5);
+        gy0 -= sz0 * (step(0.0, gy0) - 0.5);
+        vec4 gx1 = ixy1 * (1.0 / 7.0);
+        vec4 gy1 = fract(floor(gx1) * (1.0 / 7.0)) - 0.5;
+        gx1 = fract(gx1);
+        vec4 gz1 = vec4(0.5) - abs(gx1) - abs(gy1);
+        vec4 sz1 = step(gz1, vec4(0.0));
+        gx1 -= sz1 * (step(0.0, gx1) - 0.5);
+        gy1 -= sz1 * (step(0.0, gy1) - 0.5);
+        vec3 g000 = vec3(gx0.x,gy0.x,gz0.x);
+        vec3 g100 = vec3(gx0.y,gy0.y,gz0.y);
+        vec3 g010 = vec3(gx0.z,gy0.z,gz0.z);
+        vec3 g110 = vec3(gx0.w,gy0.w,gz0.w);
+        vec3 g001 = vec3(gx1.x,gy1.x,gz1.x);
+        vec3 g101 = vec3(gx1.y,gy1.y,gz1.y);
+        vec3 g011 = vec3(gx1.z,gy1.z,gz1.z);
+        vec3 g111 = vec3(gx1.w,gy1.w,gz1.w);
+        vec4 norm0 = taylorInvSqrt(vec4(dot(g000, g000), dot(g010, g010), dot(g100, g100), dot(g110, g110)));
+        g000 *= norm0.x;
+        g010 *= norm0.y;
+        g100 *= norm0.z;
+        g110 *= norm0.w;
+        vec4 norm1 = taylorInvSqrt(vec4(dot(g001, g001), dot(g011, g011), dot(g101, g101), dot(g111, g111)));
+        g001 *= norm1.x;
+        g011 *= norm1.y;
+        g101 *= norm1.z;
+        g111 *= norm1.w;
+        float n000 = dot(g000, Pf0);
+        float n100 = dot(g100, vec3(Pf1.x, Pf0.yz));
+        float n010 = dot(g010, vec3(Pf0.x, Pf1.y, Pf0.z));
+        float n110 = dot(g110, vec3(Pf1.xy, Pf0.z));
+        float n001 = dot(g001, vec3(Pf0.xy, Pf1.z));
+        float n101 = dot(g101, vec3(Pf1.x, Pf0.y, Pf1.z));
+        float n011 = dot(g011, vec3(Pf0.x, Pf1.yz));
+        float n111 = dot(g111, Pf1);
+        vec3 fade_xyz = fade(Pf0);
+        vec4 n_z = mix(vec4(n000, n100, n010, n110), vec4(n001, n101, n011, n111), fade_xyz.z);
+        vec2 n_yz = mix(n_z.xy, n_z.zw, fade_xyz.y);
+        float n_xyz = mix(n_yz.x, n_yz.y, fade_xyz.x);
+        return 2.2 * n_xyz;
+      }
+
+      float turbulence( vec3 p ) {
+        float w = 100.0;
+        float t = -0.5;
+        
+        for (float f = 1.0 ; f <= 3.0 ; f++ ){
+          float power = pow( 2.0, f );
+          t += abs( pnoise( vec3( power * p ), vec3( 10.0, 10.0, 10.0 ) ) / power );
+        }
+        return t;
+      }
+
+      void main ()
+      {
+        vPos = (modelMatrix * vec4(position, 1.0 )).xyz;
+        //vUv = uv;
+        // get a turbulent 3d noise using the normal, normal to high freq
+        noise = 10.0 * -0.10 * turbulence(0.1 * normal + time/5.0);
+        
+        // get a 3d noise using the position, low frequency
+        float b = 20.0 * pnoise ( 0.05 * position + vec3(2.0 * time), vec3 (100.0));
+      
+        // compose both noises
+        float displacement = -30.0 * noise + b;
+        //float displacement = -20.0 * noise;
+
+        vNormal = normalize(normalMatrix * normal);
+        vec3 vNormal_2 = normalize(normalMatrix * viewingVector);
+        //vec4 mvPosition = modelViewMatrix * vec4((position + (normal * displacement)), 1.0);
+        vec4 mvPosition = modelViewMatrix * vec4((position + intensity_displacement * (normal * displacement)), 1.0);
+        //vec4 mvPosition = modelViewMatrix * vec4((position), 1.0);
+        float scale =  abs(sin( time * 2.1 )  + 1.5); // zhis i found on the 'internet'
+        //float scale = time;
+        float static_scale = scale;
+        mvPosition.xyz += position * static_scale;
+        v_scale = scale;
+        
+        intensity = pow(c + 0.2 - dot(vNormal, vNormal_2), p);
+        gl_Position = projectionMatrix * mvPosition;
+      }
+    </script>
+
+    <script type="x-shader/x-fragment" id="fragmentShader">
+      // switch on high precision floats
+      #ifdef GL_ES
+      precision highp float;
+      #endif
+      uniform vec3 glowingColor;
+      uniform float time;
+
+      varying float intensity;
+      varying float v_scale;
+      varying float noise;
+      varying vec2 vUv;
+      // same name and type as VS
+      varying vec3 vNormal;
+      varying vec3 vPos;
+
+
+      uniform vec3 pointLightColor[1];
+      uniform vec3 pointLightPosition[1];
+      uniform float pointLightDistance[1];
+
+      // random function in case i need it
+      float rand(vec2 co)
+      {
+        return fract(sin(dot(co.xy ,vec2(12.9898,78.233))) * 43758.5453);
+      }
+
+      // HSL to RGB Convertion helpers
+      vec3 HUEtoRGB(float H){
+        H = mod(H,1.0);
+        float R = abs(H * 6.0 - 3.0) - 1.0;
+        float G = 2.0 - abs(H * 6.0 - 2.0);
+        float B = 2.0 - abs(H * 6.0 - 4.0);
+        return clamp(vec3(R,G,B),0.0,1.0);
+      }
+
+      vec3 HSLtoRGB(vec3 HSL){
+        vec3 RGB = HUEtoRGB(HSL.x);
+        float C = (1.0 - abs(2.0 * HSL.z - 1.0)) * HSL.y;
+        return (RGB - 0.5) * C + HSL.z;
+      }
+
+      void main ()
+      {
+        
+        float scale =  max((sin(time) + cos (time)), 0.5);  
+        vec3 glowingColor_variant = vec3(sin(glowingColor.x * v_scale), cos(glowingColor.y * v_scale), cos(glowingColor.z * v_scale));
+
+        // Pretty basic lambertian lighting...
+        vec4 addedLights = vec4(0.0,0.0,0.0, 1.0);
+
+        for(int l = 0; l < 1; l++) {
+          vec3 lightDirection = normalize(vPos - pointLightPosition[l]);
+          addedLights.rgb += clamp(dot(-lightDirection, vNormal), 0.0, 1.0) * pointLightColor[l];
+        }
+        
+        //vec3 glowingColor_new = vec3(vUv * (1.0 - 2.0 * noise) , 0.0);
+        vec3 glowingColor_new = vec3(glowingColor_variant * (1.0 - 2.0 * noise));
+        vec3 glow = glowingColor_variant * intensity;
+        vec3 glow_new = glowingColor_new * intensity;
+        
+        gl_FragColor = vec4(glow_new, 1.0);
+      }
+    </script>
+
+    <script>
+      // yo. my stuff. put some balls and rotate them. and add shaders for fanciness.
+      var camera, scene, light, renderer, stats;
+      var mouseX = 0, mouseY = 0;
+      var x = 0, y = 0;
+
+      var ballMesh_1, ballMesh_2, ballMesh_3, ballMesh_4, shaderMaterial_1, parentBall;
+      var geometry, colorVariant; //shader stuff
+      var controls; // controls stuff
+      // here comes the music part!!
+      var context, source, sourceJs;
+      var analyser;
+      var url = 'files/Mimosa.mp3'; //start with Radiohead - There there
+      var array = new Array();
+      var boost = 0;
+      var musicCheck = false;
+
+      var vertical_degrees = 0;
+
+      var songName;
+
+      // le MEAT
+
+      /**
+ * Makes a request to the Soundcloud API and returns the JSON data.
+ */
+      var SoundcloudLoader = function (player, uiUpdater) {
+        var self = this;
+        var client_id = "bde3d6a6a896d526b204225fb7bd8764"; // to get an ID go to http://developers.soundcloud.com/
+        this.sound = {};
+        this.streamUrl = "";
+        this.errorMessage = "";
+        this.player = player;
+        this.uiUpdater = uiUpdater;
+
+        /**
+         * Loads the JSON stream data object from the URL of the track (as given in the location bar of the browser when browsing Soundcloud),
+         * and on success it calls the callback passed to it (for example, used to then send the stream_url to the audiosource object).
+         * @param track_url
+         * @param callback
+         */
+        this.loadStream = function (track_url, successCallback, errorCallback) {
+          SC.initialize({
+            client_id: client_id
+          });
+          SC.get('/resolve', { url: track_url }, function (sound) {
+            if (sound.errors) {
+              self.errorMessage = "";
+              for (var i = 0; i < sound.errors.length; i++) {
+                self.errorMessage += sound.errors[i].error_message + '<br>';
+              }
+              self.errorMessage += 'Make sure the URL has the correct format: https://soundcloud.com/user/title-of-the-track';
+              errorCallback();
+            } else {
+
+              if (sound.kind == "playlist") {
+                self.sound = sound;
+                self.streamPlaylistIndex = 0;
+                self.streamUrl = function () {
+                  return sound.tracks[self.streamPlaylistIndex].stream_url + '?client_id=' + client_id;
+                }
+                successCallback();
+              } else {
+                self.sound = sound;
+                self.streamUrl = function () { return sound.stream_url + '?client_id=' + client_id; };
+                successCallback();
+              }
+            }
+          });
+        };
+
+
+        this.directStream = function (direction) {
+          if (direction == 'toggle') {
+            if (this.player.paused) {
+              this.player.play();
+            } else {
+              this.player.pause();
+            }
+          }
+          else if (this.sound.kind == "playlist") {
+            if (direction == 'coasting') {
+              this.streamPlaylistIndex++;
+            } else if (direction == 'forward') {
+              if (this.streamPlaylistIndex >= this.sound.track_count - 1) this.streamPlaylistIndex = 0;
+              else this.streamPlaylistIndex++;
+            } else {
+              if (this.streamPlaylistIndex <= 0) this.streamPlaylistIndex = this.sound.track_count - 1;
+              else this.streamPlaylistIndex--;
+            }
+            if (this.streamPlaylistIndex >= 0 && this.streamPlaylistIndex <= this.sound.track_count - 1) {
+              this.player.setAttribute('src', this.streamUrl());
+              this.uiUpdater.update(this);
+              this.player.play();
+            }
+          }
+        }
+      };
+
+      function initSong() {
+
+        var interval = window.setInterval(function () {
+          if ($('#loading_stuff').text().length < 10) {
+            $('#loading_stuff').text($('#loading_stuff').text() + '.');
+          }
+          else {
+            $('#loading_stuff').text('');
+          }
+        }, 50);
+
+
+        try {
+          if (typeof webkitAudioContext === 'function' || 'webkitAudioContext' in window) {
+            context = new webkitAudioContext();
+          }
+          else {
+            context = new AudioContext();
+          }
+        }
+        catch (e) {
+          $('#info').text('Web Audio API is not supported in this browser');
+        }
+
+        var soundcloudLoader = new SoundcloudLoader();
+        var soundcloudUrl = "https://soundcloud.com/seismicsounds/christchurch-earthquake";
+        soundcloudLoader.loadStream(soundcloudUrl,
+          function () {
+
+            //var request = new XMLHttpRequest();
+            //request.open("GET", url, true);
+            //request.responseType = "arraybuffer";
+            //request.onload = function () {
+            context.decodeAudioData(
+
+              //request.response,
+              //function (buffer) {
+              //  if (!buffer) {
+              //    $('#info').text('Error decoding file data');
+              //    return;
+              //  }
+
+                sourceJs = context.createScriptProcessor(2048, 1, 1);
+                sourceJs.buffer = buffer;
+                sourceJs.connect(context.destination);
+
+                analyser = context.createAnalyser();
+                analyser.smoothingTimeConstant = 0.05; // changable i guess
+                analyser.fftSize = 2048; // OMG is this fourier?? 
+
+                source = context.createBufferSource();
+                source.buffer = buffer;
+                source.loop = true; // looopping pooping
+                source.connect(analyser);
+                analyser.connect(sourceJs);
+                source.connect(context.destination);
+
+                sourceJs.onaudioprocess = function (e) {
+                  array = new Uint8Array(analyser.frequencyBinCount);
+                  analyser.getByteFrequencyData(array);
+                  boost = 0; // wtf?
+                  for (var i = 0; i < array.length; i++)
+                    boost += array[i];
+                  boost = boost / array.length;
+                };
+
+                clearInterval(interval);
+
+                $('#info').text('Loaded song: ' + 'Clutch - Burning Beard');
+
+                // popup
+                $('body').append($('<div onclick="play();" id="play" style="width: ' + $(window).width() + 'px; height: ' + $(window).height() + 'px;"><div id="play_link"></div></div>'));
+                $('#play_link').css('top', ($(window).height() / 2 - $('#play_link').height() / 2) + 'px');
+                $('#play_link').css('left', ($(window).width() / 2 - $('#play_link').width() / 2) + 'px');
+                $('#play').fadeIn();
+              });
+          });
+        //request.send(); // dunno wtf this does, probably loads it
+
+      }
+
+      function displayTime(time) {
+        if (time < 60) {
+          return '0:' + (time < 10 ? '0' + time : time);
+        }
+        else {
+          var minutes = Math.floor(time / 60);
+          time -= minutes * 60;
+          return minutes + ':' + (time < 10 ? '0' + time : time);
+        }
+      }
+
+
+      function play() {
+        $('#play').fadeOut('normal', function () {
+          $(this).remove();
+        });
+
+        musicCheck = true;
+
+        //var removal = document.getElementById('info');
+        //removal.parentNode.removeChild(removal);
+
+        source.start(0);
+      }
+
+      function stop() {
+        source.stop(0);
+      }
+
+      //guiStuff();
+
+      initSong();
+
+      init();
+
+      addBalls();
+
+      animate();
+
+      function guiStuff() {
+        var songElm = document.getElementById('selectSong');
+        songElm.value = "Radiohead - There, there";
+        songName = songElm.value;
+
+        songElm.addEventListener("change", function () {
+          songName = songElm.value;
+          stop();
+          url = 'files/TheParting.mp3';
+          initSong();
+        })
+      }
+
+      function onWindowResize() {
+
+        if ($('#play').length === 1) {
+          $('#play').width($(window).width());
+          $('#play').height($(window).height());
+
+          if ($('#play_link').length === 1) {
+            $('#play_link').css('top', ($(window).height() / 2 - $('#play_link').height() / 2) + 'px');
+            $('#play_link').css('left', ($(window).width() / 2 - $('#play_link').width() / 2) + 'px');
+          }
+        }
+
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      }
+
+      function init() {
+
+        renderer = new THREE.WebGLRenderer({antialias: true} ,{ alpha: true });
+        //renderer.setPixelRatio(window.devicePixelRatio);
+        //renderer.setSize(window.innerWidth / 1, window.innerHeight / 1);
+        renderer.setSize($(window).width(), $(window).height());
+        //renderer.setSize(window.innerWidth / 1, window.innerHeight / 1);
+        renderer.setClearColor(0xffffff, 0.7);
+
+        document.body.appendChild(renderer.domElement);
+        window.addEventListener('resize', onWindowResize, false);
+
+        stats = new Stats();
+        stats.domElement.style.position = 'absolute'
+        stats.domElement.style.left = '0px'
+        stats.domElement.style.top = '600px'
+        document.body.appendChild(stats.domElement);
+
+        camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 1, 8000);
+        //camera.position.set(-400, -1500, 1028);
+        //camera.rotation.set(1, 0.09, 0.009);
+        camera.position.z = 2500;
+        camera.position.y = 0;
+        camera.position.x = 0;
+
+        scene = new THREE.Scene();
+        light = new THREE.PointLight(0xffffff);
+        scene.add(light);
+
+        light.position.set(500.0, 500.0, 41.0);
+
+        var directionalLight_1 = new THREE.DirectionalLight(0xffffff);
+        directionalLight_1.position.set(50, 50, 10);
+        scene.add(directionalLight_1);
+
+        var directionalLight_2 = new THREE.DirectionalLight(0xffffff);
+        directionalLight_2.position.set(-100, -100, 0);
+        scene.add(directionalLight_2);
+
+        document.addEventListener('mousemove', onDocumentMouseMove, false);
+        document.addEventListener('mouseover', onDocumentMouseMove, false);
+        // add controls to the screen
+        controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.rotateSpeed = 1.5;
+        //controls.zoomSpeed = 1.2;
+        //controls.rotateCamera();
+        //controls.panSpeed = 0.8;
+        //controls.noZoom = false;
+        //controls.noPan = false;
+        //controls.staticMoving = true;
+        //controls.dynamicDampingFactor = 0.5;
+        //controls.keys = [65, 83, 68];
+        controls.addEventListener('change', render);
+
+        for (var i = 0; i < 7; i++) {
+          controls.enablePan = new THREE.Vector3(1, 0, 0);
+          controls.enablePan = new THREE.Vector3(0, 1, 0);
+        }
+
+        //controls.autoRotate = true;
+        // end of controls
+      }
+      function exportToObj() {
+        
+        var exporter = new THREE.OBJExporter();
+        var result = exporter.parse(scene);
+      }
+      function addBalls() {
+        parentBall = new THREE.Object3D();
+        colorVariant = 0.1;
+        // using shaders for materials
+        shaderMaterial_1 = new THREE.ShaderMaterial({
+          uniforms: THREE.UniformsUtils.merge([
+            THREE.UniformsLib['lights'],
+            {
+              "c": { value: 1.0 },
+              "p": { value: 1.5 },
+              "intensity_displacement": {value: 0.05},
+              glowingColor: { value: new THREE.Color(1, 0.5, colorVariant) },
+              viewingVector: { type: "v3", value: camera.position },
+              time: { value: 1.0 }
+            }
+          ]),
+          vertexShader: document.getElementById('vertexShader').textContent,
+          fragmentShader: document.getElementById('fragmentShader').textContent,
+          side: THREE.DoubleSide,
+          blending: THREE.MultiplyBlending, //this could be changed
+          lights: true
+        });
+
+        shaderMaterial_1.needsUpdate = true;
+
+        geometry = new THREE.SphereGeometry(100, 35, 35);
+        var material_1 = new THREE.MeshLambertMaterial({ color: 0x00cc00 });
+        var geometry_1 = new THREE.SphereGeometry(20, 35, 35);
+        //var geometry_1 = new THREE.ConeGeometry(20, 25, 35, 35);
+        ballMesh_1 = new THREE.Mesh(geometry_1, shaderMaterial_1);
+        ballMesh_1.position.set(200, 10, 0);
+        var material_2 = new THREE.MeshLambertMaterial({ color: 0x00fc00 });
+        var geometry_2 = new THREE.SphereGeometry(100, 35, 35);
+        ballMesh_2 = new THREE.Mesh(geometry_1, shaderMaterial_1);
+        ballMesh_2.position.set(-200, 10, 0);
+        var geometry_2 = new THREE.SphereGeometry(100, 35, 35);
+        ballMesh_3 = new THREE.Mesh(geometry_1, shaderMaterial_1);
+        ballMesh_3.position.set(0, 250, 0);
+        ballMesh_4 = new THREE.Mesh(geometry_1, shaderMaterial_1);
+        ballMesh_4.position.set(0, -250, 0);
+        //parentBall.add(ballMesh_1);
+        //parentBall.add(ballMesh_2);
+        //parentBall.add(ballMesh_3);
+        //parentBall.add(ballMesh_4);
+
+        // new method, old school stuff - wee
+        var num_rows = 15;
+        var num_points = num_rows * num_rows;
+        for (var i = 0, i3 = 0, l = num_points; i < l; i++, i3 += 3) {
+          if (i % num_rows == 0 && y != 0)
+            x++;
+          //var ballMesh_wPhysics = new Physijs.SphereMesh(geometry_1, shaderMaterial_1, 1.0);
+          //ballMesh_wPhysics.position.set(
+          //  ((x * 100) % (num_rows * 100)),
+          //  y * 100,
+          //  40);
+          var ballMesh_automated = new THREE.Mesh(geometry_1, shaderMaterial_1);
+          ballMesh_automated.position.set(
+            ((y * 100) % (num_rows * 100)),
+            x * 100,
+            40);
+          parentBall.add(ballMesh_automated);
+          y++;
+        }
+
+        //var bbox_sphere = new THREE.Box3().setFromObject(parentBall);
+        //var height = bbox_sphere.max.y;
+        //var width = bbox_sphere.max.x - bbox_sphere.min.x;
+        //var max_z = bbox_sphere.max.z;
+
+        //var vertical_fov = camera.fov * (Math.PI / 180);
+        //var horizontal_fov = 2 * Math.atan(Math.tan(vertical_fov / 2));
+
+        //var distance_vertical = height / (2 * Math.tan(vertical_fov / 2));
+        //var distance_horizontal = width / (2 * Math.tan(horizontal_fov / 2));
+        //var z_distance = distance_vertical >= distance_horizontal ? distance_vertical : distance_horizontal;
+
+        //camera.position.x = width / 2;
+        //camera.position.y = height / 2;
+        //camera.position.z = z_distance + max_z;
+
+        //camera.lookAt(bbox_sphere.center());
+
+        parentBall.position.x = -650;
+        parentBall.position.y = -750;
+        scene.add(parentBall);
+
+        //camera.lookAt(parentBall.position);
+        //parentBall.lookAt(camera);
+
+        //exportToObj();
+      }
+
+      function addRandomBall(time) {
+        
+        if (true) {
+          var num_rows = 4
+          var ballMesh_random = new THREE.Mesh(geometry, shaderMaterial_1);
+          ballMesh_random.position.set(
+             ((x * 400) % (num_rows * 400)),
+             y * 400,
+             400
+           );
+          parentBall.add(ballMesh_random);
+        }
+      }
+
+
+      function onDocumentMouseMove(event) {
+
+        var windowHalfX = window.innerWidth / 2;
+        var windowHalfY = window.innerHeight / 2;
+        mouseX = (event.clientX - windowHalfX) / 2;
+        mouseY = (event.clientY - windowHalfY) / 2;
+
+      }
+
+
+      function animate() {
+        requestAnimationFrame(animate);
+        //camera.position.x += (mouseX - camera.position.x) * 1;
+        //camera.position.y += (-mouseY - camera.position.y) * 1;
+        //camera.lookAt(scene.position);
+        //light.position.set(camera.position.x, camera.position.y, camera.position.z).normalize();
+        render();
+        controls.update();
+        stats.update();
+      }
+
+      function render() {
+        var time = performance.now() * 0.0002;
+        //if (performance.now() > 10000) {
+        //  if (musicCheck != true) {
+        //    play();
+        //    musicCheck = true;
+        //  }
+        //}
+        shaderMaterial_1.uniforms.time.value = time;
+        //setInterval(addRandomBall(), 100000);
+        //parentBall.rotation.x += 0.001;
+        //parentBall.rotation.y += 0.001;
+        //parentBall.rotation.z += 0.001;
+        //camera.rotation.x += 0.5;
+        //camera.rotation.y += 0.5;
+        //camera.lookAt(scene.position);
+
+        //shaderMaterial_1.uniforms.intensity_displacement.value = time;
+
+        var scale;
+
+        if (musicCheck === true) {
+          if (time > 10 && time < 20) {
+
+            if (typeof array === 'object' && array.length > 0) {
+              var k = 0;
+              var tempPosition;
+              //controls.autoRotate = true;
+              for (var i = 0; i < parentBall.children.length; i++) {
+                scale = (array[k] + boost) / 50;    //ahanda degistir bunlari sooo much fun 
+                //shaderMaterial_1.uniforms.intensity_displacement.value = (scale < 1 ? 1 : scale) / 5.0;
+                parentBall.children[i].scale.z = (scale < 3 ? 1 : scale);
+                //tempPosition = parentBall.children[i].position.z;
+                //parentBall.children[i].rotation.z += (scale < 3 ? 1 : scale) / 60;
+                //parentBall.children[i].position.z = tempPosition;
+                //parentBall.children[i].position.y = parentBall.children[i].position.y + parentBall.children[i].position.y * (scale < 1 ? 1 : scale) / 10;
+                //shaderMaterial_1.uniforms.time.value = (scale < 1 ? 1 : scale) / 5.0;
+                //parentBall.scale.x = (scale < 1 ? 1 : scale) / 5;
+                //parentBall.scale.y = (scale < 1 ? 1 : scale) / 5;
+                k += (k < array.length ? 1 : 0);
+              }
+              //shaderMaterial_1.uniforms.intensity_displacement.value = time;
+            }
+          }
+
+          else {
+
+            if (typeof array === 'object' && array.length > 0) {
+              var k = 0;
+              var tempPosition;
+              controls.autoRotate = false;
+
+
+              for (var i = 0; i < parentBall.children.length; i++) {
+                scale = (array[k] + boost) / 50;    //ahanda degistir bunlari sooo much fun 
+                //shaderMaterial_1.uniforms.intensity_displacement.value = (scale < 1 ? 1 : scale) / 5.0;
+                parentBall.children[i].scale.z = (scale < 3 ? 1 : scale);
+                //tempPosition = parentBall.children[i].position.z;
+                //parentBall.children[i].rotation.z += (scale < 1 ?1 : scale) / 50;
+                //parentBall.children[i].position.z = tempPosition;
+                //vertical_degrees += 10 * (scale < 3 ? 1 : scale) / 10;
+                //if (vertical_degrees > 360)
+                //  vertical_degrees -= 360;
+                //parentBall.children[i].position.y += 10 * Math.sin(vertical_degrees * Math.PI/180);
+                //shaderMaterial_1.uniforms.time.value = (scale < 1 ? 1 : scale) / 5.0;
+                //parentBall.scale.x = (scale < 1 ? 1 : scale) / 5;
+                //parentBall.scale.y = (scale < 1 ? 1 : scale) / 5;
+                k += (k < array.length ? 1 : 0);
+              }
+              shaderMaterial_1.uniforms.intensity_displacement.value = (scale < 3 ? 1 : scale) / 2.0;
+              //shaderMaterial_1.uniforms.c.value = (scale < 3 ? 1 : scale) / 120;
+              //shaderMaterial_1.uniforms.p.value = (scale < 3 ? 1 : scale) / 100;
+            }
+          }
+        }
+
+        renderer.render(scene, camera);
+      }
+    </script>
+
+	</body>
+</html>

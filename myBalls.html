@@ -4,14 +4,12 @@
 		<meta charset=utf-8>
 		<title>My first Three.js app</title>
 		<style>
-			body { margin: 0; background: #FFFFFF }
+			body { margin: 0; }
 			canvas { width: 100%; height: 100% }
 		</style>
 	</head>
-	<body bgcolor="#FFFFFF">
+	<body>
     <div id="container"></div>
-
-
 
 		<script src="js/three.js"></script>
     <script src="js/Detector.js"></script>
@@ -20,11 +18,11 @@
     <script src="js/MarchingCubes.js"></script>
     <script src="js/libs/dat.gui.min.js"></script>
     <script src="js/loaders/BinaryLoader.js"></script>
-    <script src="js/exporters/OBJExporter.js"></script>
 
     <script src="js/math/Lut.js"></script>
 
     <script type="x-shader/x-vertex" id="vertexShader">
+
       // switch on high precision floats
       #ifdef GL_ES
       precision highp float;
@@ -34,139 +32,19 @@
       uniform float c;
       uniform float p;
       uniform float time;
-
-      varying vec2 vUv;
-      varying float noise;
       
       varying float intensity;
       varying float v_scale;
 
-      vec3 mod289(vec3 x)
-      {
-        return x - floor(x * (1.0 / 289.0)) * 289.0;
-      }
-
-      vec4 mod289(vec4 x)
-      {
-        return x - floor(x * (1.0 / 289.0)) * 289.0;
-      }
-
-      vec4 permute(vec4 x)
-      {
-        return mod289(((x*34.0)+1.0)*x);
-      }
-
-      vec4 taylorInvSqrt(vec4 r)
-      {
-        return 1.79284291400159 - 0.85373472095314 * r;
-      }
-
-      vec3 fade(vec3 t) {
-        return t*t*t*(t*(t*6.0-15.0)+10.0);
-      }
-
-      // Classic Perlin noise, periodic variant
-      float pnoise(vec3 P, vec3 rep){
-        vec3 Pi0 = mod(floor(P), rep); // Integer part, modulo period
-        vec3 Pi1 = mod(Pi0 + vec3(1.0), rep); // Integer part + 1, mod period
-        Pi0 = mod289(Pi0);
-        Pi1 = mod289(Pi1);
-        vec3 Pf0 = fract(P); // Fractional part for interpolation
-        vec3 Pf1 = Pf0 - vec3(1.0); // Fractional part - 1.0
-        vec4 ix = vec4(Pi0.x, Pi1.x, Pi0.x, Pi1.x);
-        vec4 iy = vec4(Pi0.yy, Pi1.yy);
-        vec4 iz0 = Pi0.zzzz;
-        vec4 iz1 = Pi1.zzzz;
-
-        vec4 ixy = permute(permute(ix) + iy);
-        vec4 ixy0 = permute(ixy + iz0);
-        vec4 ixy1 = permute(ixy + iz1);
-
-        vec4 gx0 = ixy0 * (1.0 / 7.0);
-        vec4 gy0 = fract(floor(gx0) * (1.0 / 7.0)) - 0.5;
-        gx0 = fract(gx0);
-        vec4 gz0 = vec4(0.5) - abs(gx0) - abs(gy0);
-        vec4 sz0 = step(gz0, vec4(0.0));
-        gx0 -= sz0 * (step(0.0, gx0) - 0.5);
-        gy0 -= sz0 * (step(0.0, gy0) - 0.5);
-
-        vec4 gx1 = ixy1 * (1.0 / 7.0);
-        vec4 gy1 = fract(floor(gx1) * (1.0 / 7.0)) - 0.5;
-        gx1 = fract(gx1);
-        vec4 gz1 = vec4(0.5) - abs(gx1) - abs(gy1);
-        vec4 sz1 = step(gz1, vec4(0.0));
-        gx1 -= sz1 * (step(0.0, gx1) - 0.5);
-        gy1 -= sz1 * (step(0.0, gy1) - 0.5);
-
-        vec3 g000 = vec3(gx0.x,gy0.x,gz0.x);
-        vec3 g100 = vec3(gx0.y,gy0.y,gz0.y);
-        vec3 g010 = vec3(gx0.z,gy0.z,gz0.z);
-        vec3 g110 = vec3(gx0.w,gy0.w,gz0.w);
-        vec3 g001 = vec3(gx1.x,gy1.x,gz1.x);
-        vec3 g101 = vec3(gx1.y,gy1.y,gz1.y);
-        vec3 g011 = vec3(gx1.z,gy1.z,gz1.z);
-        vec3 g111 = vec3(gx1.w,gy1.w,gz1.w);
-
-        vec4 norm0 = taylorInvSqrt(vec4(dot(g000, g000), dot(g010, g010), dot(g100, g100), dot(g110, g110)));
-        g000 *= norm0.x;
-        g010 *= norm0.y;
-        g100 *= norm0.z;
-        g110 *= norm0.w;
-        vec4 norm1 = taylorInvSqrt(vec4(dot(g001, g001), dot(g011, g011), dot(g101, g101), dot(g111, g111)));
-        g001 *= norm1.x;
-        g011 *= norm1.y;
-        g101 *= norm1.z;
-        g111 *= norm1.w;
-
-        float n000 = dot(g000, Pf0);
-        float n100 = dot(g100, vec3(Pf1.x, Pf0.yz));
-        float n010 = dot(g010, vec3(Pf0.x, Pf1.y, Pf0.z));
-        float n110 = dot(g110, vec3(Pf1.xy, Pf0.z));
-        float n001 = dot(g001, vec3(Pf0.xy, Pf1.z));
-        float n101 = dot(g101, vec3(Pf1.x, Pf0.y, Pf1.z));
-        float n011 = dot(g011, vec3(Pf0.x, Pf1.yz));
-        float n111 = dot(g111, Pf1);
-
-        vec3 fade_xyz = fade(Pf0);
-        vec4 n_z = mix(vec4(n000, n100, n010, n110), vec4(n001, n101, n011, n111), fade_xyz.z);
-        vec2 n_yz = mix(n_z.xy, n_z.zw, fade_xyz.y);
-        float n_xyz = mix(n_yz.x, n_yz.y, fade_xyz.x);
-        return 2.2 * n_xyz;
-      }
-
-      float turbulence( vec3 p ) {
-        float w = 100.0;
-        float t = -0.5;
-        
-        for (float f = 1.0 ; f <= 10.0 ; f++ ){
-          float power = pow( 2.0, f );
-          t += abs( pnoise( vec3( power * p ), vec3( 10.0, 10.0, 10.0 ) ) / power );
-        }
-
-        return t;
-      }
-
       void main ()
       {
-        
-        vUv = uv;
-
-        // get a turbulent 3d noise using the normal, normal to high freq
-        noise = 10.0 * -0.10 * turbulence(0.1 * normal + time);
-        
-        // get a 3d noise using the position, low frequency
-        float b = 50.0 * pnoise ( 0.05 * position + vec3(2.0 * time), vec3 (100.0));
-      
-        // compose both noises
-        float displacement = -100.0 * noise + b;
 
         vec3 vNormal = normalize(normalMatrix * normal);
         vec3 vNormal_2 = normalize(normalMatrix * viewingVector);
 
 
-        vec4 mvPosition = modelViewMatrix * vec4((position + normal * displacement), 1.0);
-        //vec4 mvPosition = modelViewMatrix * vec4((position), 1.0);
-        float scale =  abs(sin( time * 2.1 ) + cos( time * 3.2 ) + sin( time * 4.3 )); // zhis i found on the 'internet'
+        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+        float scale =  abs(sin( time * 2.1 ) + sin( time * 3.2 ) + sin( time * 4.3 )); // zhis i found on the 'internet'
         mvPosition.xyz += position * scale;
 
         v_scale = scale;
@@ -191,8 +69,6 @@
 
       varying float intensity;
       varying float v_scale;
-      varying float noise;
-      varying vec2 vUv;
 
       // random function in case i need it
       float rand(vec2 co)
@@ -202,11 +78,11 @@
 
       // HSL to RGB Convertion helpers
       vec3 HUEtoRGB(float H){
-        H = mod(H,1.0);
-        float R = abs(H * 6.0 - 3.0) - 1.0;
-        float G = 2.0 - abs(H * 6.0 - 2.0);
-        float B = 2.0 - abs(H * 6.0 - 4.0);
-        return clamp(vec3(R,G,B),0.0,1.0);
+      H = mod(H,1.0);
+      float R = abs(H * 6.0 - 3.0) - 1.0;
+      float G = 2.0 - abs(H * 6.0 - 2.0);
+      float B = 2.0 - abs(H * 6.0 - 4.0);
+      return clamp(vec3(R,G,B),0.0,1.0);
       }
 
       vec3 HSLtoRGB(vec3 HSL){
@@ -220,13 +96,10 @@
         
         float scale =  max((sin(time) + cos (time)), 0.5);  
         vec3 glowingColor_variant = vec3(sin(glowingColor.x * v_scale), cos(glowingColor.y * v_scale), cos(glowingColor.z * v_scale));
-        
-        vec3 glowingColor_new = vec3(vUv * (1.0 - 2.0 * noise) , 0.0);
 
         vec3 glow = glowingColor_variant * intensity;
-        vec3 glow_new = glowingColor_new * intensity;
         
-        gl_FragColor = vec4(glow_new, 1.0);
+        gl_FragColor = vec4(glow, 1.0);
 
       }
 
@@ -236,127 +109,21 @@
       // yo. my stuff. put some balls and rotate them. and add shaders for fanciness.
 
       var camera, scene, light, renderer;
-      var mouseX = 0, mouseY = 0;
-      var x = 0, y = 0;
+      var mouseX, mouseY = 0;
 
       var ballMesh_1, ballMesh_2, ballMesh_3, ballMesh_4, shaderMaterial_1, parentBall;
 
-      var geometry, colorVariant; //shader stuff
-
-      // here comes the music part!!
-      var context, source, sourceJs;
-      var analyser;
-      var url = 'files/ThereThere.mp3'; //start with Radiohead - There there
-      var array = new Array();
-      var boost = 0;
-
-      var musicCheck = false;;
-
-      //var interval = window.setInterval(function () {
-      //  if ($('#loading_dots').text().length() < 3) {
-      //    $('#loading_dots').text($('#loading_dots').text() + '.');
-      //  }
-      //  else {
-      //    $('#loading_dots').text('');
-      //  }
-      //}, 500); // i have no idea what this is, check later.
-
-      // le MEAT
-      try {
-        if (typeof AudioContext === 'function' || 'AudioContext' in window) {
-          context = new AudioContext();
-        }
-        else {
-          context = new AudioContext();
-        }
-      }
-
-      catch (e) {
-        $('#info').text('Web Audio API is not supported in this browser');
-      }
-
-      var request = new XMLHttpRequest();
-      request.open("GET", url, true);
-      request.responseType = "arraybuffer";
-
-      request.onload = function () {
-        context.decodeAudioData(
-          
-          request.response,
-          function (buffer) {
-            if (!buffer) {
-              $('#info').text('Error decoding file data');
-              return;
-            }
-
-            sourceJs = context.createScriptProcessor(2048, 1, 1);
-            sourceJs.buffer = buffer;
-            sourceJs.connect(context.destination);
-
-            analyser = context.createAnalyser();
-            analyser.smoothingTimeConstant = 0.6; // changable i guess
-            analyser.fftSize = 512; // OMG is this fourier?? 
-
-            source = context.createBufferSource();
-            source.buffer = buffer;
-            source.loop = true; // looopping pooping
-
-            source.connect(analyser);
-            analyser.connect(sourceJs);
-            source.connect(context.destination);
-
-            sourceJs.onaudioprocess = function (e) {
-              array = new Uint8Array(analyser.frequencyBinCount);
-              analyser.getByteFrequencyData(array);
-              boost = 0; // wtf?
-
-              for (var i = 0; i < array.length; i++)
-                boost += array[i];
-
-              boost = boost / array.length;
-            };
-
-            // popup
-            $('body').append($('<div onclick="play();" id="play" style="width: ' + $(window).width() + 'px; height: ' + $(window).height() + 'px;"><div id="play_link"></div></div>'));
-            $('#play_link').css('top', ($(window).height() / 2 - $('#play_link').height() / 2) + 'px');
-            $('#play_link').css('left', ($(window).width() / 2 - $('#play_link').width() / 2) + 'px');
-            $('#play').fadeIn();
-
-          });
-      }
-
-      request.send(); // dunno wtf this does, probably loads it
-
-      function displayTime(time) {
-        if (time < 60) {
-          return '0:' + (time < 10 ? '0' + time : time);
-        }
-        else {
-          var minutes = Math.floor(time / 60);
-          time -= minutes * 60;
-          return minutes + ':' + (time < 10 ? '0' + time : time);
-        }
-      }
-
-      function play() {
-        source.start(0);
-      }
-
-
-      init();
-      addBalls();
-      animate();
+      var colorVariant;
 
       function init() {
 
-        renderer = new THREE.WebGLRenderer({antialias: true} ,{ alpha: true });
+        renderer = new THREE.WebGLRenderer();
         renderer.setPixelRatio(window.devicePixelRatio);
-        renderer.setSize(window.innerWidth / 1.2, window.innerHeight / 1.2);
-        renderer.setClearColor(0xffffff, 0.2);
+        renderer.setSize(window.innerWidth, window.innerHeight);
         document.body.appendChild(renderer.domElement);
 
-        camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 1, 8000);
-        camera.position.set(1000, 1000, 8000);
+        camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 1, 5000);
+        camera.position.set(0, 0, 1000);
 
         scene = new THREE.Scene();
 
@@ -374,12 +141,6 @@
         document.addEventListener('mousemove', onDocumentMouseMove, false);
         document.addEventListener('mouseover', onDocumentMouseMove, false);
 
-      }
-
-      function exportToObj() {
-        
-        var exporter = new THREE.OBJExporter();
-        var result = exporter.parse(scene);
 
       }
 
@@ -403,8 +164,6 @@
           blending: THREE.MultiplyBlending //this could be changed
         });
 
-        geometry = new THREE.SphereGeometry(100, 35, 35);
-
         var material_1 = new THREE.MeshLambertMaterial({ color: 0x00cc00 });
         var geometry_1 = new THREE.SphereGeometry(100, 35, 35);
         ballMesh_1 = new THREE.Mesh(geometry_1, shaderMaterial_1);
@@ -422,53 +181,19 @@
         ballMesh_4 = new THREE.Mesh(geometry_1, shaderMaterial_1);
         ballMesh_4.position.set(0, -250, 0);
 
-        //parentBall.add(ballMesh_1);
-        //parentBall.add(ballMesh_2);
-        //parentBall.add(ballMesh_3);
-        //parentBall.add(ballMesh_4);
-
-        // new method, old school stuff - wee
-        var num_rows = 10;
-        var num_points = num_rows * num_rows;
-
-        for (var i = 0, i3 = 0, l = num_points; i < l; i++, i3 += 3) {
-
-          if (i % num_rows == 0 && x != 0)
-            y++;
-
-          var ballMesh_automated = new THREE.Mesh(geometry_1, shaderMaterial_1);
-          ballMesh_automated.position.set(
-             ((x * 300) % (num_rows * 300)),
-             y * 300,
-             Math.random() * num_rows * 300);
-
-          parentBall.add(ballMesh_automated);
-
-          x++;
-        }
+        parentBall.add(ballMesh_1);
+        parentBall.add(ballMesh_2);
+        parentBall.add(ballMesh_3);
+        parentBall.add(ballMesh_4);
 
         scene.add(parentBall);
 
-        //exportToObj();
+        //scene.add(ballMesh_1);
+        //scene.add(ballMesh_2);
+        //scene.add(ballMesh_3);
+        //scene.add(ballMesh_4);
 
-      }
-
-      function addRandomBall(time) {
-        
-        if (true) {
-
-          var num_rows = 4
-
-          var ballMesh_random = new THREE.Mesh(geometry, shaderMaterial_1);
-          ballMesh_random.position.set(
-             ((x * 400) % (num_rows * 400)),
-             y * 400,
-             Math.random() * num_rows * 400
-           );
-
-          parentBall.add(ballMesh_random);
-
-        }
+        animate();
 
       }
 
@@ -485,11 +210,10 @@
 
         requestAnimationFrame(animate);
 
-        //camera.position.x += (mouseX - camera.position.x) * 1;
-        //camera.position.y += (-mouseY - camera.position.y) * 1;
-        //camera.lookAt(scene.position);
 
-        light.position.set(camera.position.x, camera.position.y, camera.position.z).normalize();
+        //camera.position.x += (mouseX - camera.position.x) * .05;
+        //camera.position.y += (-mouseY - camera.position.y) * .05;
+        //camera.lookAt(scene.position);
 
         render();
 
@@ -497,46 +221,42 @@
 
       function render() {
 
-        var time = performance.now() * 0.0002;
-
-        if (performance.now() > 10000) {
-          if (musicCheck != true) {
-            play();
-            musicCheck = true;
-          }
-        }
+        var time = performance.now() * 0.0003;
 
         shaderMaterial_1.uniforms.time.value = time;
 
-        //setInterval(addRandomBall(), 100000);
-
-        //parentBall.rotation.x += 0.001;
-        //parentBall.rotation.y += 0.001;
-        //parentBall.rotation.z += time * 0.0001;
+        parentBall.rotation.x += 0.001;
+        parentBall.rotation.y += 0.001;
+        parentBall.rotation.z += 0.001;
 
         //camera.rotation.x += 0.5;
         //camera.rotation.y += 0.5;
         //camera.lookAt(scene.position);
 
-        if (typeof array === 'object' && array.length > 0) {
-          var k = 0;
-
-          for (var i = 0; i < 1; i++) {
-            var scale = (array[k] + boost + 5) / 30;    //ahanda degistir bunlari sooo much fun 
-            parentBall.scale.y = (scale < 1 ? 1 : scale);
-            k += (k < array.length ? 1 : 0);
-          }
-        }
+        //ballMesh_1.rotation.x += 0.01;
+        //ballMesh_1.rotation.y += 0.01;
+        //ballMesh_1.rotation.z += 0.01;
+        //ballMesh_2.rotation.x += 0.01;
+        //ballMesh_2.rotation.y += 0.01;
+        //ballMesh_2.rotation.z += 0.01;
+        //ballMesh_3.rotation.x += 0.01;
+        //ballMesh_3.rotation.y += 0.01;
+        //ballMesh_3.rotation.z += 0.01;
+        //ballMesh_4.rotation.x += 0.01;
+        //ballMesh_4.rotation.y += 0.01;
+        //ballMesh_4.rotation.z += 0.01;
 
         renderer.render(scene, camera);
 
       }
 
-    </script>
+      init();
+      addBalls();
 
-    <div onclick="play();" id="play" style="width: 1304px; height: 342px; display: block;">
-      <div id="play_link" style="top: 139px; left: 620px;"></div>
-    </div>
+      
+
+
+    </script>
 
 	</body>
 </html>

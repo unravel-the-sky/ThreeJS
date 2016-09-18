@@ -1,0 +1,213 @@
+﻿<!DOCTYPE html>
+<html>
+	<head>
+		<meta charset=utf-8>
+		<title>New ideas in ThreeJS - Base</title>
+		<style>
+			body { margin: 0; overflow: hidden}
+			canvas { width: 100%; height: 100% }
+		</style>
+	</head>
+  
+	<body>
+		<script src="js/three.js"></script>
+    <script src="js/libs/stats.min.js"></script>
+    <script src="js/controls/OrbitControls.js"></script>
+    
+    <script type="x-shader/x-vertex" id="vertexShader">
+      #ifdef GL_ES
+      precision highp float;
+      #endif
+      
+      uniform float time;
+      varying vec2 vUv;
+      //Fresnel stuff
+      varying vec3 vPositionW;
+      varying vec3 vNormalW;
+      varying vec3 vWorldPosition;
+      
+      void main(){
+      
+        vUv = uv;
+
+        // some displacement noise based on the vertex position
+        vec3 offset = vec3(
+          sin(dot(position.xy, vec2(11.12312, 85.123)) + time) * 12.0,
+          sin(dot(position.xy, vec2(11.12312, 85.123)) + time + 31.512) * 12.0,
+          sin(dot(position.xy, vec2(11.12312, 85.123)) + time + 112.512) * 12.0
+        );
+
+        vec3 vertex = position;
+
+        vec2 center = vec2(0.0, 0.0);
+        vec2 distance = vec2(vertex.x, vertex.y) - center;
+        float size = 2.0;
+        float magnitude = 4.0;
+        float length = length(distance);
+       
+        vertex.z += sin(length/1.0 / -size + time/100.0 * 10.0) * magnitude;
+
+        //Fresnel ziki
+        vPositionW = vec3(modelMatrix * vec4(position, 1.0));
+        vNormalW = normalize(vec3(modelMatrix * vec4(normal, 0.0)));
+        vWorldPosition = (modelViewMatrix * vec4(position, 1.0)).xyz;
+        
+        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+          
+        gl_Position = projectionMatrix * mvPosition;
+        
+      }
+        
+    </script>
+    
+    <script type="x-shader/x-fragment" id="fragmentShader">
+    
+      #ifdef GL_ES
+      precision highp float;
+      #endif
+      
+      varying vec2 vUv;
+      
+      void main(){
+        
+        gl_FragColor = vec4(vec3(vUv, 0.0), 1.0);
+      
+      }
+    
+    </script>
+
+    <script type="x-shader/x-fragment" id="fragmentShader_discoBalls">
+
+      #ifdef GL_ES
+        precision highp float;
+      #endif
+
+      varying vec2 vUv;
+
+      //Fresnel stuff
+      varying vec3 vPositionW;
+      varying vec3 vNormalW;
+      varying vec3 vWorldPosition;
+
+      uniform float time;
+      uniform float speed;
+      uniform vec2 resolution;
+      uniform vec3 color;
+
+      float rand(vec2 vector){
+        return fract(sin(dot(vector.xy, vec2(11.12312, 85.123))) * 43758.2342 );
+      }
+
+      void main(){
+      //first get the grid color
+      vec2 grid = vUv.xy * resolution;
+
+      //calculate some random brightness value for each grid
+      float brightness = fract(rand(floor(grid)) + sin(time)*speed);
+
+      //reduce brightness for pixels far from the square center (to create the circle effect)
+      brightness *= sin(0.8 - length(fract(grid) - vec2(0.5, 0.5))* sin(time+1.434) * time);
+
+      //put brighness with the color
+      float magnitude = 1.0; //extra parameter
+
+      //Fresnel ziki
+      vec3 viewDirectionW = normalize(cameraPosition - vWorldPosition);
+      float fresnelTerm = dot(viewDirectionW, vNormalW);
+      fresnelTerm = clamp(1.0 - fresnelTerm, 0.0, 1.0) * 10.0 + 1.0;
+
+      gl_FragColor = vec4(magnitude * brightness * fresnelTerm  * vec3(vUv, 0.5), 1.0);
+
+      }
+
+    </script>
+    
+		<script>
+			// Our Javascript will go here.
+      var scene = new THREE.Scene();
+      var camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+      var controls; // controls stuff
+      var stats; // stats stuff
+
+			var renderer = new THREE.WebGLRenderer({antialias: true});
+			renderer.setSize( window.innerWidth, window.innerHeight );
+			document.body.appendChild( renderer.domElement );
+      
+      
+      var sphereGeometry = new THREE.SphereGeometry( 60, 30, 30 );
+      var cubeGeometry = new THREE.BoxGeometry( 1, 1, 1 );
+      
+      var material = new THREE.MeshBasicMaterial( { color: 0x00ff00 } );
+      var shaderMaterial = new THREE.ShaderMaterial ({
+        uniforms: {
+            time: { value: 0.1 }
+          },
+          vertexShader: document.getElementById('vertexShader').textContent,
+          fragmentShader: document.getElementById('fragmentShader').textContent,
+          side: THREE.FrontSide,
+          blending: THREE.MultiplyBlending //this could be changed
+      });
+
+      var shaderMaterialDiscoBall = new THREE.ShaderMaterial({
+        uniforms: {
+          time: { value: 0.1 },
+          speed: { value: 0.9 },
+          resolution: { type: "v2", value: new THREE.Vector2(60, 60) }
+        },
+        vertexShader: document.getElementById('vertexShader').textContent,
+        fragmentShader: document.getElementById('fragmentShader_discoBalls').textContent,
+        side: THREE.FrontSide,
+        blending: THREE.MultiplyBlending //this could be changed
+      });
+
+      
+      var cube = new THREE.Mesh(sphereGeometry, shaderMaterialDiscoBall);
+      scene.add( cube );
+
+      camera.position.z = 100;
+
+
+      // add controls to the screen
+      controls = new THREE.OrbitControls(camera, renderer.domElement);
+      controls.rotateSpeed = 1.5;
+      //controls.autoRotate = true;
+      controls.autoRotateSpeed = 5.5;
+      controls.addEventListener('change', render);
+
+      for (var i = 0; i < 7; i++) {
+        controls.enablePan = new THREE.Vector3(1, 0, 0);
+        controls.enablePan = new THREE.Vector3(0, 1, 0);
+      }
+
+      stats = new Stats();
+      stats.domElement.style.position = 'absolute'
+      stats.domElement.style.left = '0px'
+      stats.domElement.style.top = '600px'
+      document.body.appendChild(stats.domElement);
+
+      animate();
+
+      function animate() {
+        requestAnimationFrame(animate);
+        render();
+
+        controls.update();
+        stats.update();
+      }
+
+      
+      function render() {
+
+				//cube.rotation.x += 0.01;
+        cube.rotation.y += 0.001;
+
+				var time = performance.now() * 0.001;
+				shaderMaterialDiscoBall.uniforms.time.value = time;
+
+				renderer.render(scene, camera);
+			}
+
+      
+		</script>
+	</body>
+</html>
